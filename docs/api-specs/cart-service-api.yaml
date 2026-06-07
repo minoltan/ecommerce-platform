@@ -1,0 +1,319 @@
+openapi: 3.1.0
+info:
+  title: Cart Service API
+  version: 0.1.0-draft
+  description: Shopping cart management — add/remove items, coupon, checkout initiation.
+
+servers:
+  - url: /v1
+
+tags:
+  - name: Cart
+
+paths:
+
+  /cart:
+    get:
+      summary: Get current cart for authenticated user or guest session
+      operationId: getCart
+      tags: [Cart]
+      parameters:
+        - $ref: '#/components/parameters/SessionToken'
+      security:
+        - bearerAuth: []
+        - {}
+      responses:
+        '200':
+          description: Current cart (empty cart returned if none exists)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartSummary'
+
+    delete:
+      summary: Clear all items from cart
+      operationId: clearCart
+      tags: [Cart]
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Cart cleared
+
+  /cart/items:
+    post:
+      summary: Add item to cart
+      operationId: addItemToCart
+      tags: [Cart]
+      parameters:
+        - $ref: '#/components/parameters/SessionToken'
+      security:
+        - bearerAuth: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddItemRequest'
+      responses:
+        '200':
+          description: Item added; updated cart returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartSummary'
+        '404':
+          description: Product not found or not published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Requested quantity exceeds available stock
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cart/items/{itemId}:
+    patch:
+      summary: Update quantity of a cart line item
+      operationId: updateCartItem
+      tags: [Cart]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateItemRequest'
+      responses:
+        '200':
+          description: Quantity updated; updated cart returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartSummary'
+        '404':
+          description: Cart item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Requested quantity exceeds available stock
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Remove item from cart
+      operationId: removeCartItem
+      tags: [Cart]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+      responses:
+        '200':
+          description: Item removed; updated cart returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartSummary'
+        '404':
+          description: Cart item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cart/coupon:
+    post:
+      summary: Apply a coupon code to the cart
+      operationId: applyCoupon
+      tags: [Cart]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyCouponRequest'
+      responses:
+        '200':
+          description: Coupon applied; updated cart with discount returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartSummary'
+        '400':
+          description: Coupon invalid, expired, or usage limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Remove coupon from cart
+      operationId: removeCoupon
+      tags: [Cart]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Coupon removed; updated cart returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartSummary'
+
+  /cart/checkout:
+    post:
+      summary: Validate cart and initiate checkout
+      operationId: checkoutCart
+      tags: [Cart]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '200':
+          description: Cart validated; CartCheckedOut event published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutResponse'
+        '409':
+          description: Checkout validation failed (out of stock, price changed, invalid coupon)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutValidationError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    SessionToken:
+      name: X-Session-Token
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Guest session token for unauthenticated carts
+
+    ItemId:
+      name: itemId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    CartLineItem:
+      type: object
+      required: [itemId, productId, productName, sku, quantity, snapshotPrice, currentPrice]
+      properties:
+        itemId:          { type: string, format: uuid }
+        productId:       { type: string, format: uuid }
+        variantId:       { type: string, format: uuid }
+        productName:     { type: string }
+        sku:             { type: string }
+        quantity:        { type: integer, minimum: 1 }
+        snapshotPrice:   { type: number, format: double, description: Price at time of add }
+        currentPrice:    { type: number, format: double, description: Current live price }
+        priceChanged:    { type: boolean }
+        thumbnailUrl:    { type: string, format: uri }
+        stockStatus:     { type: string, enum: [IN_STOCK, LOW_STOCK, OUT_OF_STOCK] }
+
+    CartSummary:
+      type: object
+      required: [cartId, items, subtotal, total, currency]
+      properties:
+        cartId:        { type: string, format: uuid }
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartLineItem'
+        subtotal:      { type: number, format: double }
+        discountAmount: { type: number, format: double }
+        couponCode:    { type: string }
+        tax:           { type: number, format: double }
+        total:         { type: number, format: double }
+        currency:      { type: string, default: INR }
+        hasPriceChanges: { type: boolean }
+        updatedAt:     { type: string, format: date-time }
+
+    AddItemRequest:
+      type: object
+      required: [productId, quantity]
+      properties:
+        productId:  { type: string, format: uuid }
+        variantId:  { type: string, format: uuid }
+        quantity:   { type: integer, minimum: 1 }
+
+    UpdateItemRequest:
+      type: object
+      required: [quantity]
+      properties:
+        quantity: { type: integer, minimum: 1 }
+
+    ApplyCouponRequest:
+      type: object
+      required: [couponCode]
+      properties:
+        couponCode: { type: string }
+
+    CheckoutRequest:
+      type: object
+      required: [deliveryAddressId]
+      properties:
+        deliveryAddressId: { type: string, format: uuid }
+
+    CheckoutResponse:
+      type: object
+      required: [orderId, cartId]
+      properties:
+        orderId: { type: string, format: uuid }
+        cartId:  { type: string, format: uuid }
+
+    CheckoutValidationError:
+      type: object
+      required: [code, message, correlationId, failures]
+      properties:
+        code:          { type: string }
+        message:       { type: string }
+        correlationId: { type: string, format: uuid }
+        failures:
+          type: array
+          items:
+            type: object
+            required: [type, productId]
+            properties:
+              type:      { type: string, enum: [OUT_OF_STOCK, PRICE_CHANGED, COUPON_INVALID] }
+              productId: { type: string, format: uuid }
+              detail:    { type: string }
+
+    ErrorResponse:
+      type: object
+      required: [code, message, correlationId]
+      properties:
+        code:          { type: string }
+        message:       { type: string }
+        correlationId: { type: string, format: uuid }

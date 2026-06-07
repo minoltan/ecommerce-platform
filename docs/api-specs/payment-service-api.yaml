@@ -1,0 +1,274 @@
+openapi: 3.1.0
+info:
+  title: Payment Service API
+  version: 0.1.0-draft
+  description: Payment initiation, status, refunds, and gateway webhook handling.
+
+servers:
+  - url: /v1
+
+tags:
+  - name: Payments
+  - name: Refunds
+  - name: Webhooks
+
+paths:
+
+  /payments:
+    post:
+      summary: Initiate payment for an order
+      operationId: initiatePayment
+      tags: [Payments]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiatePaymentRequest'
+      responses:
+        '201':
+          description: Payment session created; redirect URL returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSessionResponse'
+        '409':
+          description: Payment already exists for this order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid order state for payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /payments/{paymentId}:
+    get:
+      summary: Get payment status
+      operationId: getPayment
+      tags: [Payments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200':
+          description: Payment detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentDetail'
+        '404':
+          description: Payment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /payments/order/{orderId}:
+    get:
+      summary: Get payment record for an order
+      operationId: getPaymentByOrder
+      tags: [Payments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Payment detail for the order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentDetail'
+        '404':
+          description: No payment found for order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /payments/{paymentId}/refunds:
+    post:
+      summary: Initiate a refund for a captured payment
+      operationId: initiateRefund
+      tags: [Refunds]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiateRefundRequest'
+      responses:
+        '201':
+          description: Refund initiated; RefundInitiated event published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundResponse'
+        '422':
+          description: Refund amount exceeds captured amount
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Payment not in a refundable state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /payments/{paymentId}/refunds/{refundId}:
+    get:
+      summary: Get refund status
+      operationId: getRefund
+      tags: [Refunds]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+        - name: refundId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Refund detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundResponse'
+        '404':
+          description: Refund not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /webhooks/payment-gateway:
+    post:
+      summary: Receive payment gateway webhook (idempotent)
+      operationId: handlePaymentWebhook
+      tags: [Webhooks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentWebhookPayload'
+      responses:
+        '200':
+          description: Webhook acknowledged (always 200 — retries safe due to idempotency)
+        '400':
+          description: Malformed payload or invalid signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    PaymentId:
+      name: paymentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    InitiatePaymentRequest:
+      type: object
+      required: [orderId, amount, currency, paymentMethod]
+      properties:
+        orderId:       { type: string, format: uuid }
+        amount:        { type: number, format: double }
+        currency:      { type: string, default: INR }
+        paymentMethod: { type: string, enum: [CARD, UPI] }
+        returnUrl:     { type: string, format: uri }
+
+    PaymentSessionResponse:
+      type: object
+      required: [paymentId, orderId, status, redirectUrl]
+      properties:
+        paymentId:   { type: string, format: uuid }
+        orderId:     { type: string, format: uuid }
+        status:      { type: string, enum: [INITIATED] }
+        redirectUrl: { type: string, format: uri, description: Gateway checkout URL }
+        expiresAt:   { type: string, format: date-time }
+
+    PaymentDetail:
+      type: object
+      required: [paymentId, orderId, status, amount, currency]
+      properties:
+        paymentId:      { type: string, format: uuid }
+        orderId:        { type: string, format: uuid }
+        status:         { type: string, enum: [INITIATED, AUTHORISED, CAPTURED, FAILED, REFUND_INITIATED, REFUNDED] }
+        amount:         { type: number, format: double }
+        currency:       { type: string }
+        paymentMethod:  { type: string }
+        maskedCard:     { type: string, description: "Last 4 digits e.g. ****1234" }
+        transactionId:  { type: string, description: Gateway transaction reference }
+        capturedAt:     { type: string, format: date-time }
+        refunds:
+          type: array
+          items:
+            $ref: '#/components/schemas/RefundResponse'
+
+    InitiateRefundRequest:
+      type: object
+      required: [amount, reason]
+      properties:
+        amount: { type: number, format: double, description: Partial or full refund amount }
+        reason: { type: string }
+
+    RefundResponse:
+      type: object
+      required: [refundId, paymentId, amount, status]
+      properties:
+        refundId:    { type: string, format: uuid }
+        paymentId:   { type: string, format: uuid }
+        amount:      { type: number, format: double }
+        status:      { type: string, enum: [INITIATED, ISSUED, FAILED] }
+        reason:      { type: string }
+        issuedAt:    { type: string, format: date-time }
+
+    PaymentWebhookPayload:
+      type: object
+      required: [eventType, transactionId, orderId, amount, currency, timestamp]
+      properties:
+        eventType:     { type: string, enum: [AUTHORISED, CAPTURED, FAILED, REFUNDED] }
+        transactionId: { type: string, description: Gateway-side unique transaction ID (idempotency key) }
+        orderId:       { type: string, format: uuid }
+        amount:        { type: number, format: double }
+        currency:      { type: string }
+        timestamp:     { type: string, format: date-time }
+        gatewayRef:    { type: string }
+        signature:     { type: string, description: HMAC signature for webhook verification }
+
+    ErrorResponse:
+      type: object
+      required: [code, message, correlationId]
+      properties:
+        code:          { type: string }
+        message:       { type: string }
+        correlationId: { type: string, format: uuid }

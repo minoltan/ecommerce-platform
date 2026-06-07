@@ -1,0 +1,413 @@
+openapi: 3.1.0
+info:
+  title: Product Catalog Service API
+  version: 0.1.0-draft
+  description: Product listings, categories, variants, search, and pricing.
+
+servers:
+  - url: /v1
+
+tags:
+  - name: Products
+  - name: Categories
+
+paths:
+
+  /products:
+    get:
+      summary: Search and list products
+      operationId: searchProducts
+      tags: [Products]
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+          description: Full-text search keyword
+        - name: categoryId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: minPrice
+          in: query
+          schema: { type: number, format: double }
+        - name: maxPrice
+          in: query
+          schema: { type: number, format: double }
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [relevance, price_asc, price_desc, newest] }
+          default: relevance
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        '200':
+          description: Paginated product list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPage'
+
+    post:
+      summary: Create a new product (admin only)
+      operationId: createProduct
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '201':
+          description: Product created in DRAFT state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+        '403':
+          description: Caller is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+
+  /products/{productId}:
+    get:
+      summary: Get full product detail
+      operationId: getProduct
+      tags: [Products]
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: Product detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+        '404':
+          description: Product not found or unpublished
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      summary: Update product fields (admin only)
+      operationId: updateProduct
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+      responses:
+        '200':
+          description: Product updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Soft-delete a product (admin only)
+      operationId: deleteProduct
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '204':
+          description: Product soft-deleted (hidden from customers, retained for order history)
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /products/{productId}/publish:
+    post:
+      summary: Publish a DRAFT product (admin only)
+      operationId: publishProduct
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: Product published and visible to customers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+        '409':
+          description: Product already published or in invalid state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /products/{productId}/unpublish:
+    post:
+      summary: Unpublish a product (admin only)
+      operationId: unpublishProduct
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: Product unpublished and hidden from customers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+
+  /products/{productId}/price:
+    patch:
+      summary: Update product base price (admin only)
+      operationId: updateProductPrice
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePriceRequest'
+      responses:
+        '200':
+          description: Price updated; previous price retained
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+        '422':
+          description: Invalid price value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /categories:
+    get:
+      summary: List all categories (tree structure)
+      operationId: listCategories
+      tags: [Categories]
+      responses:
+        '200':
+          description: Category tree
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+
+    post:
+      summary: Create a new category (admin only)
+      operationId: createCategory
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryRequest'
+      responses:
+        '201':
+          description: Category created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '409':
+          description: Category name already exists under parent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    ProductSummary:
+      type: object
+      required: [productId, name, basePrice, status, stockStatus]
+      properties:
+        productId:   { type: string, format: uuid }
+        name:        { type: string }
+        basePrice:   { type: number, format: double }
+        previousPrice: { type: number, format: double }
+        currency:    { type: string, default: INR }
+        thumbnailUrl: { type: string, format: uri }
+        categoryId:  { type: string, format: uuid }
+        status:      { type: string, enum: [DRAFT, PUBLISHED, UNPUBLISHED, DELETED] }
+        stockStatus: { type: string, enum: [IN_STOCK, LOW_STOCK, OUT_OF_STOCK] }
+
+    ProductDetail:
+      allOf:
+        - $ref: '#/components/schemas/ProductSummary'
+        - type: object
+          properties:
+            description: { type: string }
+            images:
+              type: array
+              items: { type: string, format: uri }
+            attributes:
+              type: object
+              additionalProperties: { type: string }
+            variants:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProductVariant'
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+
+    ProductVariant:
+      type: object
+      required: [variantId, sku, attributes]
+      properties:
+        variantId:     { type: string, format: uuid }
+        sku:           { type: string }
+        attributes:    { type: object, additionalProperties: { type: string } }
+        priceOverride: { type: number, format: double }
+        stockStatus:   { type: string, enum: [IN_STOCK, LOW_STOCK, OUT_OF_STOCK] }
+
+    ProductPage:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductSummary'
+        page:          { type: integer }
+        size:          { type: integer }
+        totalElements: { type: integer }
+        totalPages:    { type: integer }
+
+    CreateProductRequest:
+      type: object
+      required: [name, categoryId, basePrice, sku]
+      properties:
+        name:        { type: string }
+        description: { type: string }
+        categoryId:  { type: string, format: uuid }
+        basePrice:   { type: number, format: double, minimum: 0 }
+        sku:         { type: string }
+        attributes:  { type: object, additionalProperties: { type: string } }
+
+    UpdateProductRequest:
+      type: object
+      properties:
+        name:        { type: string }
+        description: { type: string }
+        categoryId:  { type: string, format: uuid }
+        attributes:  { type: object, additionalProperties: { type: string } }
+
+    UpdatePriceRequest:
+      type: object
+      required: [price]
+      properties:
+        price: { type: number, format: double, minimum: 0 }
+
+    Category:
+      type: object
+      required: [categoryId, name]
+      properties:
+        categoryId:  { type: string, format: uuid }
+        name:        { type: string }
+        parentId:    { type: string, format: uuid }
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+
+    CreateCategoryRequest:
+      type: object
+      required: [name]
+      properties:
+        name:     { type: string }
+        parentId: { type: string, format: uuid }
+
+    ErrorResponse:
+      type: object
+      required: [code, message, correlationId]
+      properties:
+        code:          { type: string }
+        message:       { type: string }
+        correlationId: { type: string, format: uuid }
+
+    ValidationErrorResponse:
+      type: object
+      required: [code, message, correlationId, errors]
+      properties:
+        code:          { type: string }
+        message:       { type: string }
+        correlationId: { type: string, format: uuid }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, reason]
+            properties:
+              field:  { type: string }
+              reason: { type: string }

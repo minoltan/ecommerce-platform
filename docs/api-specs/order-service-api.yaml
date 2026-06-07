@@ -1,0 +1,387 @@
+openapi: 3.1.0
+info:
+  title: Order Service API
+  version: 0.1.0-draft
+  description: Order lifecycle management — placement, status tracking, cancellation, returns.
+
+servers:
+  - url: /v1
+
+tags:
+  - name: Orders
+  - name: Returns
+
+paths:
+
+  /orders:
+    post:
+      summary: Place a new order (triggered by CartCheckedOut event internally; exposed for direct API use)
+      operationId: placeOrder
+      tags: [Orders]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlaceOrderRequest'
+      responses:
+        '201':
+          description: Order created in PENDING state; OrderPlaced event published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderSummary'
+        '422':
+          description: Validation failure (out of stock, invalid address)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '503':
+          description: Downstream service unavailable (Inventory or Payment timeout)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      summary: List orders for authenticated customer
+      operationId: listMyOrders
+      tags: [Orders]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED, FAILED]
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Paginated order history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPage'
+
+  /orders/{orderId}:
+    get:
+      summary: Get full order detail
+      operationId: getOrder
+      tags: [Orders]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: Order detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetail'
+        '403':
+          description: Order does not belong to caller
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /orders/{orderId}/cancel:
+    post:
+      summary: Cancel an order (customer — PENDING or CONFIRMED state only)
+      operationId: cancelOrder
+      tags: [Orders]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelOrderRequest'
+      responses:
+        '200':
+          description: Order cancelled; OrderCancelled event published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderSummary'
+        '409':
+          description: Order is not in a cancellable state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /orders/{orderId}/returns:
+    post:
+      summary: Request a return for a delivered order
+      operationId: requestReturn
+      tags: [Returns]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReturnRequest'
+      responses:
+        '201':
+          description: Return request created; ReturnRequested event published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReturnResponse'
+        '409':
+          description: Return window expired or order not delivered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/orders:
+    get:
+      summary: List all orders (admin only)
+      operationId: adminListOrders
+      tags: [Orders]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: customerId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        '200':
+          description: Paginated admin order list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPage'
+
+  /admin/orders/{orderId}/status:
+    patch:
+      summary: Update order status (admin only)
+      operationId: adminUpdateOrderStatus
+      tags: [Orders]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrderStatusRequest'
+      responses:
+        '200':
+          description: Status updated; OrderStatusUpdated event published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderSummary'
+        '409':
+          description: Invalid state transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    OrderLineItem:
+      type: object
+      required: [productId, productName, sku, quantity, unitPrice, lineTotal]
+      properties:
+        productId:   { type: string, format: uuid }
+        variantId:   { type: string, format: uuid }
+        productName: { type: string }
+        sku:         { type: string }
+        quantity:    { type: integer }
+        unitPrice:   { type: number, format: double }
+        lineTotal:   { type: number, format: double }
+
+    DeliveryAddress:
+      type: object
+      required: [line1, city, state, postalCode, country]
+      properties:
+        line1:      { type: string }
+        line2:      { type: string }
+        city:       { type: string }
+        state:      { type: string }
+        postalCode: { type: string }
+        country:    { type: string }
+
+    OrderSummary:
+      type: object
+      required: [orderId, status, total, currency, placedAt]
+      properties:
+        orderId:   { type: string, format: uuid }
+        status:    { type: string, enum: [PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED, FAILED] }
+        itemCount: { type: integer }
+        total:     { type: number, format: double }
+        currency:  { type: string, default: INR }
+        placedAt:  { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    OrderDetail:
+      allOf:
+        - $ref: '#/components/schemas/OrderSummary'
+        - type: object
+          properties:
+            customerId:       { type: string, format: uuid }
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/OrderLineItem'
+            deliveryAddress:  { $ref: '#/components/schemas/DeliveryAddress' }
+            subtotal:         { type: number, format: double }
+            discountAmount:   { type: number, format: double }
+            couponCode:       { type: string }
+            tax:              { type: number, format: double }
+            trackingNumber:   { type: string }
+            statusTimeline:
+              type: array
+              items:
+                type: object
+                properties:
+                  status:    { type: string }
+                  timestamp: { type: string, format: date-time }
+                  note:      { type: string }
+
+    OrderPage:
+      type: object
+      required: [content, page, size, totalElements]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderSummary'
+        page:          { type: integer }
+        size:          { type: integer }
+        totalElements: { type: integer }
+        totalPages:    { type: integer }
+
+    PlaceOrderRequest:
+      type: object
+      required: [cartId, deliveryAddressId]
+      properties:
+        cartId:            { type: string, format: uuid }
+        deliveryAddressId: { type: string, format: uuid }
+
+    CancelOrderRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string }
+
+    ReturnRequest:
+      type: object
+      required: [reason, items]
+      properties:
+        reason: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            required: [productId, quantity]
+            properties:
+              productId: { type: string, format: uuid }
+              quantity:  { type: integer, minimum: 1 }
+
+    ReturnResponse:
+      type: object
+      required: [returnId, orderId, status]
+      properties:
+        returnId: { type: string, format: uuid }
+        orderId:  { type: string, format: uuid }
+        status:   { type: string, enum: [REQUESTED, APPROVED, REJECTED] }
+        createdAt: { type: string, format: date-time }
+
+    UpdateOrderStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:         { type: string, enum: [CONFIRMED, PROCESSING, SHIPPED, DELIVERED] }
+        trackingNumber: { type: string }
+        note:           { type: string }
+
+    ErrorResponse:
+      type: object
+      required: [code, message, correlationId]
+      properties:
+        code:          { type: string }
+        message:       { type: string }
+        correlationId: { type: string, format: uuid }
+
+    ValidationErrorResponse:
+      type: object
+      required: [code, message, correlationId, errors]
+      properties:
+        code:          { type: string }
+        message:       { type: string }
+        correlationId: { type: string, format: uuid }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:  { type: string }
+              reason: { type: string }

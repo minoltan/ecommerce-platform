@@ -1,0 +1,176 @@
+openapi: 3.1.0
+info:
+  title: Notification Service API
+  version: 0.1.0-draft
+  description: Notification dispatch, user preferences, and delivery log.
+
+servers:
+  - url: /v1
+
+tags:
+  - name: Notifications
+  - name: Preferences
+
+paths:
+
+  /notifications/me:
+    get:
+      summary: Get notification history for authenticated user
+      operationId: getMyNotifications
+      tags: [Notifications]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel
+          in: query
+          schema: { type: string, enum: [EMAIL, SMS, PUSH] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Paginated notification log
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPage'
+
+  /notifications/preferences:
+    get:
+      summary: Get notification preferences for authenticated user
+      operationId: getNotificationPreferences
+      tags: [Preferences]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User notification preferences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+
+    put:
+      summary: Update notification preferences
+      operationId: updateNotificationPreferences
+      tags: [Preferences]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationPreferences'
+      responses:
+        '200':
+          description: Preferences updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+
+  /admin/notifications/send:
+    post:
+      summary: Manually trigger a notification (admin only)
+      operationId: adminSendNotification
+      tags: [Notifications]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualNotificationRequest'
+      responses:
+        '202':
+          description: Notification queued for dispatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationRecord'
+        '403':
+          description: Caller is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    NotificationRecord:
+      type: object
+      required: [notificationId, userId, channel, templateId, status, createdAt]
+      properties:
+        notificationId: { type: string, format: uuid }
+        userId:         { type: string, format: uuid }
+        channel:        { type: string, enum: [EMAIL, SMS, PUSH] }
+        templateId:     { type: string }
+        subject:        { type: string }
+        status:         { type: string, enum: [QUEUED, DELIVERED, FAILED, SUPPRESSED] }
+        failureReason:  { type: string }
+        retryCount:     { type: integer }
+        createdAt:      { type: string, format: date-time }
+        deliveredAt:    { type: string, format: date-time }
+
+    NotificationPage:
+      type: object
+      required: [content, page, size, totalElements]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationRecord'
+        page:          { type: integer }
+        size:          { type: integer }
+        totalElements: { type: integer }
+        totalPages:    { type: integer }
+
+    NotificationPreferences:
+      type: object
+      required: [userId]
+      properties:
+        userId: { type: string, format: uuid }
+        channels:
+          type: object
+          properties:
+            email: { type: boolean, default: true }
+            sms:   { type: boolean, default: false }
+            push:  { type: boolean, default: true }
+        categories:
+          type: object
+          description: Per-category opt-in/out (transactional always true)
+          properties:
+            orderUpdates:   { type: boolean, default: true }
+            paymentAlerts:  { type: boolean, default: true }
+            promotions:     { type: boolean, default: false }
+            cartReminders:  { type: boolean, default: false }
+
+    ManualNotificationRequest:
+      type: object
+      required: [userId, channel, templateId]
+      properties:
+        userId:     { type: string, format: uuid }
+        channel:    { type: string, enum: [EMAIL, SMS, PUSH] }
+        templateId: { type: string }
+        variables:
+          type: object
+          additionalProperties: { type: string }
+
+    ErrorResponse:
+      type: object
+      required: [code, message, correlationId]
+      properties:
+        code:          { type: string }
+        message:       { type: string }
+        correlationId: { type: string, format: uuid }

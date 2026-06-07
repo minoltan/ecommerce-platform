@@ -1,0 +1,256 @@
+openapi: 3.1.0
+info:
+  title: Inventory Service API
+  version: 0.1.0-draft
+  description: Stock levels, reservations, replenishment, and availability checks.
+
+servers:
+  - url: /v1
+
+tags:
+  - name: Inventory
+
+paths:
+
+  /inventory/{sku}:
+    get:
+      summary: Get stock level for a SKU
+      operationId: getStockLevel
+      tags: [Inventory]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Sku'
+      responses:
+        '200':
+          description: Current stock level
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockLevel'
+        '404':
+          description: SKU not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /inventory/{sku}/availability:
+    get:
+      summary: Get customer-facing availability status for a SKU (no exact quantities exposed)
+      operationId: getAvailability
+      tags: [Inventory]
+      parameters:
+        - $ref: '#/components/parameters/Sku'
+      responses:
+        '200':
+          description: Availability status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityResponse'
+        '404':
+          description: SKU not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /inventory/{sku}/replenish:
+    post:
+      summary: Replenish stock for a SKU (inventory manager only)
+      operationId: replenishStock
+      tags: [Inventory]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Sku'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplenishRequest'
+      responses:
+        '200':
+          description: Stock replenished; StockReplenished event published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockLevel'
+        '403':
+          description: Caller does not have INVENTORY_MANAGER role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: SKU not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /inventory/{sku}/adjust:
+    post:
+      summary: Manual stock adjustment with reason (inventory manager only)
+      operationId: adjustStock
+      tags: [Inventory]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Sku'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdjustStockRequest'
+      responses:
+        '200':
+          description: Stock adjusted; InventoryAdjusted event published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockLevel'
+        '422':
+          description: Adjustment would result in negative stock
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /inventory/{sku}/reorder-level:
+    patch:
+      summary: Set reorder level threshold for a SKU
+      operationId: setReorderLevel
+      tags: [Inventory]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Sku'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetReorderLevelRequest'
+      responses:
+        '200':
+          description: Reorder level updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockLevel'
+
+  /inventory/bulk-availability:
+    post:
+      summary: Check availability for multiple SKUs (used by Cart at checkout)
+      operationId: bulkAvailabilityCheck
+      tags: [Inventory]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkAvailabilityRequest'
+      responses:
+        '200':
+          description: Availability status per SKU
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkAvailabilityResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Sku:
+      name: sku
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Product SKU identifier
+
+  schemas:
+    StockLevel:
+      type: object
+      required: [sku, onHandQuantity, reservedQuantity, availableQuantity, reorderLevel]
+      properties:
+        sku:                { type: string }
+        onHandQuantity:     { type: integer, minimum: 0 }
+        reservedQuantity:   { type: integer, minimum: 0 }
+        availableQuantity:  { type: integer, minimum: 0 }
+        reorderLevel:       { type: integer, minimum: 0 }
+        status:             { type: string, enum: [IN_STOCK, LOW_STOCK, OUT_OF_STOCK] }
+        lastUpdated:        { type: string, format: date-time }
+
+    AvailabilityResponse:
+      type: object
+      required: [sku, status]
+      properties:
+        sku:    { type: string }
+        status: { type: string, enum: [IN_STOCK, LOW_STOCK, OUT_OF_STOCK] }
+
+    ReplenishRequest:
+      type: object
+      required: [quantity, referenceNote]
+      properties:
+        quantity:      { type: integer, minimum: 1 }
+        referenceNote: { type: string, description: PO number or delivery reference }
+
+    AdjustStockRequest:
+      type: object
+      required: [delta, reasonCode]
+      properties:
+        delta:      { type: integer, description: Positive to increase; negative to decrease }
+        reasonCode: { type: string, enum: [DAMAGE, THEFT, AUDIT_CORRECTION, EXPIRY, OTHER] }
+        note:       { type: string }
+
+    SetReorderLevelRequest:
+      type: object
+      required: [reorderLevel]
+      properties:
+        reorderLevel: { type: integer, minimum: 0 }
+
+    BulkAvailabilityRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [sku, requestedQuantity]
+            properties:
+              sku:               { type: string }
+              requestedQuantity: { type: integer, minimum: 1 }
+
+    BulkAvailabilityResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            required: [sku, available, status]
+            properties:
+              sku:               { type: string }
+              available:         { type: boolean }
+              status:            { type: string, enum: [IN_STOCK, LOW_STOCK, OUT_OF_STOCK] }
+              availableQuantity: { type: integer }
+
+    ErrorResponse:
+      type: object
+      required: [code, message, correlationId]
+      properties:
+        code:          { type: string }
+        message:       { type: string }
+        correlationId: { type: string, format: uuid }
