@@ -153,7 +153,7 @@ hotfix/*      ← emergency fixes
 
 | File | Purpose | Status |
 |------|---------|--------|
-| `skills/techniques/agile-docs.md` | User story, AC, NFR, ADR formats | ✅ Done |
+| `skills/techniques/agile-docs.md` | User story, AC, NFR, ADR formats | ⬜ Not created |
 | `skills/techniques/system-design.md` | HLD, LLD, C4, draw.io standards | ⬜ |
 | `skills/techniques/java-springboot.md` | Project structure, patterns, conventions | ⬜ |
 | `skills/techniques/docker-k8s.md` | Dockerfile, Helm, K8s manifest patterns | ⬜ |
@@ -166,8 +166,8 @@ hotfix/*      ← emergency fixes
 | File | Phase | Produces | Status |
 |------|-------|---------|--------|
 | `skills/roles/requirements-engineer.md` | Both | RE docs, user stories, AC, OpenAPI stubs | ✅ Done |
-| `skills/roles/project-manager.md` | Both | Sprint plans, ClickUp tasks, Slack updates | ⬜ |
-| `skills/roles/system-architect.md` | Both | HLD, LLD, C4 diagrams, ADRs | ⬜ |
+| `skills/roles/project-manager.md` | Both | Sprint plans, ClickUp tasks, Slack updates | ✅ Done |
+| `skills/roles/system-architect.md` | Both | HLD, LLD, C4 diagrams, ADRs | ✅ Done |
 | `skills/roles/backend-developer.md` | Phase 1 | Spring Boot services, tests, Kafka | ⬜ |
 | `skills/roles/devops-engineer.md` | Both | Dockerfiles, Helm, GitHub Actions, ArgoCD | ⬜ |
 | `skills/roles/aws-architect.md` | Phase 2 | CDK stacks, Lambda, DynamoDB design | ⬜ |
@@ -226,7 +226,8 @@ hotfix/*      ← emergency fixes
 | Non-functional requirements | `docs/requirements/non-functional-requirements.md` | — | ✅ Done |
 | User stories | `docs/requirements/user-stories.md` | — | ✅ Done |
 | Acceptance criteria | `docs/requirements/acceptance-criteria.md` | — | ✅ Done |
-| OpenAPI stubs | `docs/api-specs/[service]-api.yaml` | — | ✅ Done |
+| OpenAPI stubs (7 services) | `docs/api-specs/[service]-api.yaml` | — | ✅ Done |
+| Use case diagrams (7 contexts) | `docs/requirements/use-cases/[context]-use-cases.md` | — | ✅ Done |
 
 #### Bounded Contexts Covered
 - [x] User & Auth
@@ -244,39 +245,30 @@ hotfix/*      ← emergency fixes
 **Role:** `skills/roles/system-architect.md`
 **ClickUp List:** Phase-2-SA (ID: 901818617888)
 **Git Tag:** `v0.2.0` (on completion)
-**Status:** Not started ⬜
-
-#### How to Start
-
-```bash
-# Step 1 — Create PM task in ClickUp first
-# Step 2 — Open branch
-git checkout develop
-git pull origin develop
-git checkout -b feature/SA-001-hld
-git push origin feature/SA-001-hld
-
-# Step 3 — Activate role in Claude Code
-# Read skills/roles/system-architect.md then act as that role
-```
+**Status:** In Progress ⏳
 
 #### Artifacts to Produce
 
 | Artifact | Path | ClickUp Task | Branch | Status |
 |----------|------|--------------|--------|--------|
-| C4 Level 1 — System context | `docs/hld/c4-level1-system-context.drawio` | SA-001 | `feature/SA-001-hld` | ⬜ |
-| C4 Level 2 — Container diagram | `docs/hld/c4-level2-container.drawio` | SA-002 | `feature/SA-001-hld` | ⬜ |
-| C4 Level 3 — Component diagrams | `docs/hld/c4-level3-components/` | SA-003 | `feature/SA-001-hld` | ⬜ |
-| Sequence diagram — Order flow | `docs/lld/sequences/order-placement.drawio` | SA-004 | `feature/SA-002-lld` | ⬜ |
-| Sequence diagram — Payment saga | `docs/lld/sequences/payment-saga.drawio` | SA-005 | `feature/SA-002-lld` | ⬜ |
-| Sequence diagram — Inventory | `docs/lld/sequences/inventory-reservation.drawio` | SA-006 | `feature/SA-002-lld` | ⬜ |
-| ER diagrams — all services | `docs/lld/er-diagrams/[service].drawio` | SA-007 | `feature/SA-002-lld` | ⬜ |
-| State machine — Order lifecycle | `docs/lld/state-machines/order-states.drawio` | SA-008 | `feature/SA-002-lld` | ⬜ |
-| ADR-001: Why microservices | `docs/adr/ADR-001-microservices.md` | SA-009 | `feature/SA-003-adr` | ⬜ |
-| ADR-002: Why Kafka | `docs/adr/ADR-002-kafka.md` | SA-010 | `feature/SA-003-adr` | ⬜ |
-| ADR-003: Database per service | `docs/adr/ADR-003-db-per-service.md` | SA-011 | `feature/SA-003-adr` | ⬜ |
-| ADR-004: Sync vs async | `docs/adr/ADR-004-communication.md` | SA-012 | `feature/SA-003-adr` | ⬜ |
-| ADR-005: Saga pattern | `docs/adr/ADR-005-saga-pattern.md` | SA-013 | `feature/SA-003-adr` | ⬜ |
+| C4 Level 1 — System context | `docs/hld/system-context.md` | SA-001 | `feature/SA-001-system-context-diagram` | ✅ PR open |
+| C4 Level 2 — Container diagram | `docs/hld/container-diagram.md` | SA-002 | `feature/SA-002-container-diagram` | ✅ PR open |
+| C4 Level 3 — Component diagrams | `docs/lld/[context]-lld.md` §Component | SA-003 | `feature/SA-003-*` | ⬜ |
+| Sequence diagrams | `docs/lld/[context]-lld.md` §Sequences | SA-004 | `feature/SA-004-*` | ⬜ |
+| ER diagrams | `docs/lld/[context]-lld.md` §DB Schema | SA-005 | `feature/SA-005-*` | ⬜ |
+| Order state machine | `docs/lld/order-lld.md` §State Machine | SA-006 | `feature/SA-006-*` | ⬜ |
+| ADR-001: Monetary precision (integer paise) | `docs/adr/ADR-001-monetary-precision.md` | SA-007 | `feature/SA-007-adr-001` | ⬜ |
+| ADR-002: Stock reservation strategy | `docs/adr/ADR-002-stock-reservation.md` | SA-008 | `feature/SA-008-adr-002` | ⬜ |
+| ADR-003: Saga pattern (choreography vs orchestration) | `docs/adr/ADR-003-saga-pattern.md` | SA-009 | `feature/SA-009-adr-003` | ⬜ |
+| ADR-004: Payment idempotency | `docs/adr/ADR-004-payment-idempotency.md` | SA-010 | `feature/SA-010-adr-004` | ⬜ |
+| ADR-005: Cart storage (Redis vs DB) | `docs/adr/ADR-005-cart-storage.md` | SA-011 | `feature/SA-011-adr-005` | ⬜ |
+| LLD — User/Auth | `docs/lld/user-auth-lld.md` | SA-012 | `feature/SA-012-lld-user-auth` | ⬜ |
+| LLD — Product Catalog | `docs/lld/product-catalog-lld.md` | SA-013 | `feature/SA-013-lld-catalog` | ⬜ |
+| LLD — Cart | `docs/lld/cart-lld.md` | SA-014 | `feature/SA-014-lld-cart` | ⬜ |
+| LLD — Order | `docs/lld/order-lld.md` | SA-015 | `feature/SA-015-lld-order` | ⬜ |
+| LLD — Payment | `docs/lld/payment-lld.md` | SA-016 | `feature/SA-016-lld-payment` | ⬜ |
+| LLD — Inventory | `docs/lld/inventory-lld.md` | SA-017 | `feature/SA-017-lld-inventory` | ⬜ |
+| LLD — Notification | `docs/lld/notification-lld.md` | SA-018 | `feature/SA-018-lld-notification` | ⬜ |
 
 ---
 
@@ -436,14 +428,14 @@ ecommerce-platform/
 ├── skills/
 │   ├── roles/
 │   │   ├── requirements-engineer.md  ✅
-│   │   ├── project-manager.md        ⬜
-│   │   ├── system-architect.md       ⬜
+│   │   ├── project-manager.md        ✅
+│   │   ├── system-architect.md       ✅
 │   │   ├── backend-developer.md      ⬜
 │   │   ├── devops-engineer.md        ⬜
 │   │   ├── aws-architect.md          ⬜
 │   │   └── qa-engineer.md            ⬜
 │   └── techniques/
-│       ├── agile-docs.md             ✅
+│       ├── agile-docs.md             ⬜ (not yet created)
 │       ├── system-design.md          ⬜
 │       ├── java-springboot.md        ⬜
 │       ├── docker-k8s.md             ⬜
@@ -451,9 +443,10 @@ ecommerce-platform/
 │       ├── testing-standards.md      ⬜
 │       └── cicd-patterns.md          ⬜
 ├── docs/
-│   ├── requirements/                 ✅ Complete
-│   ├── api-specs/                    ✅ Complete
-│   ├── hld/                          ⬜
+│   ├── requirements/                 ✅ Complete (event-storming, FRs, NFRs, user-stories, AC, 7 use-cases)
+│   ├── api-specs/                    ✅ Complete (7 OpenAPI stubs)
+│   ├── project-management/           ✅ Complete (clickup-board-structure.md)
+│   ├── hld/                          ⏳ In progress (SA-001, SA-002 — PRs open, not yet merged)
 │   ├── lld/                          ⬜
 │   └── adr/                          ⬜
 ├── phase1/
@@ -538,4 +531,4 @@ checklist in CLAUDE.md to keep Claude Code context current.
 
 ---
 
-*Last updated: June 2026 — Phase 1 (RE) complete, ClickUp board set up, Phase 2 (SA) starting next*
+*Last updated: 2026-06-08 — Phase 1 (RE) complete, Phase 2 (SA) in progress (SA-001 system-context, SA-002 container-diagram done — PRs open)*
