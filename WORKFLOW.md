@@ -153,8 +153,9 @@ hotfix/*      ← emergency fixes
 
 | File | Purpose | Status |
 |------|---------|--------|
-| `skills/techniques/agile-docs.md` | User story, AC, NFR, ADR formats | ⬜ Not created |
-| `skills/techniques/system-design.md` | HLD, LLD, C4, draw.io standards | ⬜ |
+| `skills/techniques/agile-docs.md` | User story, AC, NFR, ADR formats | ✅ Done |
+| `skills/techniques/system-design.md` | HLD, LLD, C4, draw.io standards | ✅ Done |
+| `skills/techniques/design-patterns.md` | Architectural pattern catalogue with rationale | ✅ Done |
 | `skills/techniques/java-springboot.md` | Project structure, patterns, conventions | ⬜ |
 | `skills/techniques/docker-k8s.md` | Dockerfile, Helm, K8s manifest patterns | ⬜ |
 | `skills/techniques/aws-serverless.md` | CDK, Lambda, DynamoDB, Step Functions | ⬜ |
