@@ -469,6 +469,7 @@ label "Saga E" across two HLD documents — tracked as a reconciliation item in 
 | **`StockRestored`** | `inventory.stock.restored` | §8.4 — `ReturnApproved` consumed | ❌ **Missing — add in follow-up (§11)** |
 | `ProductOutOfStock` | `inventory.product.out-of-stock` | §8.5 — `available_qty == 0` | ✅ Listed |
 | `LowStockAlertTriggered` | `inventory.low-stock-alert.triggered` | §8.5 — `available_qty <= reorder_level` | ✅ Listed |
+| **`StockReplenished`** | `inventory.stock.replenished` | `replenishStock(qty)` (UC-IN-04, admin-triggered) — payload `{sku, productId, newQty, wasOutOfStock, correlationId}` | ✅ Listed (added in cross-cutting HLD sync PR, SA-021) |
 
 `StockReserved` and `StockReservationFailed` are **saga-critical** — they are the two
 events Order's `SagaJoinService` (order-lld.md §8.2) waits on for T-04/T-06.

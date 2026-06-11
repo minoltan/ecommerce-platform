@@ -28,7 +28,7 @@ This document covers all key cross-service flows, expanding on the event stormin
 | SD-01 | User Registration + Email Verification | Auth | User/Auth, Notification |
 | SD-02 | User Login + Guest Cart Merge | Auth | User/Auth, Cart |
 | SD-03 | Refresh Token Rotation | Auth | User/Auth |
-| SD-04 | Product Search | Read | API Gateway, Product Catalog, Search Index |
+| SD-04 | Product Search | Read | API Gateway, Product Catalog, Redis (search cache), catalog_db (FULLTEXT) |
 | SD-05 | Add Item to Cart | Write | Cart |
 | SD-06 | Checkout → Order Placement (Saga A — Happy Path) | Saga | Cart, Order, Inventory, Payment, Notification |
 | SD-07 | Payment Failure Compensation (Saga B) | Saga | Payment, Order, Inventory, Cart, Notification |
@@ -170,26 +170,26 @@ sequenceDiagram
     actor User as Guest or Customer
     participant GW as API Gateway
     participant PC as Product Catalog Service
-    participant ES as Search Index (Elasticsearch)
     participant Cache as Redis
+    participant DB as catalog_db (MySQL)
 
-    User->>GW: GET /products/search?q=running+shoes&category=footwear&page=0
+    User->>GW: GET /products?q=running+shoes&categoryId=footwear&page=0
     GW->>GW: Rate limit check (100 req/min unauthenticated)
-    GW->>PC: GET /products/search?q=...
+    GW->>PC: GET /products?q=...
 
     PC->>Cache: GET search:running+shoes:footwear:0
     Cache-->>PC: MISS
 
-    PC->>ES: POST /products/_search {query, filters, from, size}
-    ES-->>PC: {hits, total, took}
+    PC->>DB: SELECT ... WHERE MATCH(title, description) AGAINST (? IN BOOLEAN MODE)<br/>AND category_id=? AND status='PUBLISHED' ORDER BY created_at DESC LIMIT 20
+    DB-->>PC: rows
 
-    PC->>PC: Map ES hits → ProductSummaryDTO
-    PC->>Cache: SET search:running+shoes:footwear:0 (TTL 60s)
+    PC->>PC: Map rows → ProductSummaryDTO
+    PC->>Cache: SET search:running+shoes:footwear:0 (TTL 5min)
 
-    PC-->>GW: HTTP 200 {items[], total, page, pageSize}
+    PC-->>GW: HTTP 200 {content[], total, page, size}
     GW-->>User: HTTP 200
 
-    Note over ES,PC: Cache TTL 60s balances freshness<br/>vs search index load
+    Note over DB,PC: MySQL FULLTEXT + Redis cache (ADR-0013).<br/>Cache TTL 5min balances freshness vs DB load;<br/>admin writes invalidate via DEL search:* directly.
 ```
 
 ---
@@ -476,7 +476,7 @@ sequenceDiagram
     participant Kafka
     participant PC as Product Catalog Service
     participant PDB as catalog_db
-    participant ES as Search Index
+    participant Cache as Redis
     participant NS as Notification Service
 
     Note over IS: StockCommitted brings availableQty to 0
@@ -487,10 +487,9 @@ sequenceDiagram
 
     par
         Kafka-->>PC: CONSUME ProductOutOfStock
-        PC->>PDB: BEGIN TX — UPDATE product (status=UNPUBLISHED)
+        PC->>PDB: BEGIN TX — UPDATE product SET status=UNPUBLISHED, unpublish_reason=OUT_OF_STOCK
         PDB-->>PC: committed ✓
-        PC->>ES: DELETE /products/{productId} (de-index)
-        ES-->>PC: acknowledged ✓
+        PC->>Cache: DEL search:* (invalidate search cache)
         PC->>Kafka: PUBLISH catalog.product.unpublished {productId, reason:OUT_OF_STOCK, correlationId}
     and
         Kafka-->>NS: CONSUME LowStockAlertTriggered
@@ -498,7 +497,7 @@ sequenceDiagram
         NS->>AdminEmail: Low stock alert email {sku, productName, currentQty:0}
     end
 
-    Note over PC,ES: Product no longer visible in search or browse.<br/>Replenishment → StockReplenished → re-publish flow reverses this.
+    Note over PC,Cache: Product no longer visible in search or browse (status=UNPUBLISHED, search:* cache invalidated).<br/>unpublish_reason=OUT_OF_STOCK lets replenishment auto-republish (SD-12);<br/>a MANUAL unpublish is never overridden by replenishment.
 ```
 
 ---
@@ -555,7 +554,7 @@ sequenceDiagram
     participant Kafka
     participant PC as Product Catalog Service
     participant PDB as catalog_db
-    participant ES as Search Index
+    participant Cache as Redis
     participant NS as Notification Service
 
     Admin->>GW: PUT /inventory/{sku}/replenish {qty: 100, warehouseId} + JWT (ADMIN role)
@@ -566,17 +565,21 @@ sequenceDiagram
     IS->>IS: Check: was availableQty = 0 before replenishment?
 
     alt Product was out of stock
-        IS->>Kafka: PUBLISH inventory.stock.replenished {sku, newQty, wasOutOfStock:true, correlationId}
+        IS->>Kafka: PUBLISH inventory.stock.replenished {sku, productId, newQty, wasOutOfStock:true, correlationId}
 
         Kafka-->>PC: CONSUME StockReplenished (wasOutOfStock=true)
-        PC->>PDB: BEGIN TX — UPDATE product (status=PUBLISHED)
-        PC->>ES: POST /products (re-index)
-        PC->>Kafka: PUBLISH catalog.product.published {productId, correlationId}
-
-        Kafka-->>NS: CONSUME StockReplenished
-        NS->>Admin: Low stock alert cleared email
+        PC->>PDB: SELECT unpublish_reason FROM product WHERE id=productId
+        alt unpublish_reason = OUT_OF_STOCK
+            PC->>PDB: BEGIN TX — UPDATE product SET status=PUBLISHED, unpublish_reason=NULL
+            PC->>Cache: DEL search:* (invalidate search cache)
+            PC->>Kafka: PUBLISH catalog.product.published {productId, correlationId}
+            Kafka-->>NS: CONSUME StockReplenished
+            NS->>Admin: Low stock alert cleared email
+        else unpublish_reason = MANUAL
+            Note over PC: Admin manually unpublished this product —<br/>replenishment must NOT override that decision.<br/>Product remains UNPUBLISHED.
+        end
     else Was already in stock (qty top-up)
-        IS->>Kafka: PUBLISH inventory.stock.replenished {sku, newQty, wasOutOfStock:false, correlationId}
+        IS->>Kafka: PUBLISH inventory.stock.replenished {sku, productId, newQty, wasOutOfStock:false, correlationId}
     end
 
     IDB-->>IS: committed ✓

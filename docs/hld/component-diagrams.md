@@ -106,15 +106,16 @@ graph TB
 **Bounded context:** Product Catalog  
 **Aggregates:** `Product`, `Category`  
 **DB:** `catalog_db` (MySQL)  
-**External:** Elasticsearch (search index), S3 (image storage)
+**External:** S3 (image storage). Search is MySQL full-text + Redis cache for Phase 1
+(ADR-0013) — Elasticsearch is deferred to Phase 2 (see Migration Path in ADR-0013).
 
 ```mermaid
 graph TB
     subgraph external ["External"]
         GW["API Gateway"]
         Kafka["Kafka"]
-        DB[("catalog_db\nMySQL")]
-        ES["Search Index\n(Elasticsearch)"]
+        DB[("catalog_db\nMySQL\n+ FULLTEXT(title, description)")]
+        Redis[("Redis\nsearch:* cache, TTL 5min")]
         S3["S3 + CloudFront"]
     end
 
@@ -122,7 +123,7 @@ graph TB
         subgraph api ["api/"]
             ProdC["ProductController\nGET/POST/PUT/DELETE /products\nPOST /products/{id}/publish\nPOST /products/{id}/unpublish"]
             CatC["CategoryController\nGET/POST/PUT/DELETE /categories"]
-            SearchC["SearchController\nGET /products/search?q="]
+            SearchC["SearchController\nGET /products?q="]
         end
 
         subgraph application ["application/"]
@@ -132,17 +133,17 @@ graph TB
         end
 
         subgraph domain ["domain/"]
-            Prod["Product (Aggregate Root)\nid · sku · title · slug\nprice(BIGINT paise) · status\nvariants · images · categoryId"]
+            Prod["Product (Aggregate Root)\nid · sku · title · slug\nprice(BIGINT paise) · status\nunpublishReason · variants\nimages · categoryId"]
             Cat["Category (Aggregate Root)\nid · name · parentId · slug"]
         end
 
         subgraph infra ["infrastructure/"]
-            PR["ProductRepository\nJPA — catalog_db"]
+            PR["ProductRepository\nJPA — catalog_db\nMATCH...AGAINST full-text search"]
             CR["CategoryRepository\nJPA — catalog_db"]
-            ESA["SearchIndexAdapter\nElasticsearch RestClient\nindex · deindex · search"]
+            SCA["SearchCacheAdapter\nRedis — search:{hash}\nTTL 5min, DEL search:* on invalidate"]
             S3A["S3ImageAdapter\nAWS S3 SDK\nupload · delete · getUrl"]
             KP["KafkaEventPublisher\nProductPublished\nProductPriceUpdated\nProductVariantAdded\nProductVariantRemoved\nProductUnpublished"]
-            KC["KafkaEventConsumer\nProductOutOfStock ← Inventory"]
+            KC["KafkaEventConsumer\nProductOutOfStock ← Inventory\nStockReplenished ← Inventory"]
         end
     end
 
@@ -150,13 +151,13 @@ graph TB
     ProdC --> ProdS
     CatC --> CatS
     SearchC --> SearchS
-    ProdS --> Prod & PR & ESA & S3A & KP
+    ProdS --> Prod & PR & SCA & S3A & KP
     CatS --> Cat & CR
-    SearchS --> ESA
+    SearchS --> PR & SCA
     KC -->|"inventory.*"| ProdS
     PR --> DB
     CR --> DB
-    ESA --> ES
+    SCA --> Redis
     S3A --> S3
     KP -->|"catalog.*"| Kafka
     KC --> Kafka

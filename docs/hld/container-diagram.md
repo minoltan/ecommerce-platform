@@ -163,11 +163,11 @@ graph TB
 | Topic group | Owner (publisher) | Key events | Consumers |
 |---|---|---|---|
 | `user-auth.*` | User/Auth Service | `UserRegistered`, `UserLoggedIn`, `UserDeactivated` | Cart, Notification |
-| `catalog.*` | Product Catalog Service | `ProductPriceUpdated`, `ProductVariantAdded`, `ProductVariantRemoved` | Cart, Inventory |
+| `catalog.*` | Product Catalog Service | `ProductPublished`, `ProductUnpublished`, `ProductPriceUpdated`, `ProductVariantAdded`, `ProductVariantRemoved` | Cart, Inventory |
 | `cart.*` | Cart Service | `CartCheckedOut`, `CartAbandoned` | Order, Notification |
 | `order.*` | Order Service | `OrderPlaced`, `OrderConfirmed`, `OrderFailed`, `OrderCancelled`, `OrderShipped`, `OrderDelivered`, `ReturnApproved` | Payment, Inventory, Notification, Cart |
 | `payment.*` | Payment Service | `PaymentAuthorised`, `PaymentFailed`, `PaymentExpired`, `PaymentVoided`, `RefundProcessed`, `RefundFailed` | Order, Cart, Notification |
-| `inventory.*` | Inventory Service | `StockReservationFailed`, `StockReserved`, `StockReleased`, `StockRestored`, `ProductOutOfStock`, `LowStockAlertTriggered` | Order, Product Catalog, Notification |
+| `inventory.*` | Inventory Service | `StockReservationFailed`, `StockReserved`, `StockReleased`, `StockRestored`, `StockReplenished`, `ProductOutOfStock`, `LowStockAlertTriggered` | Order, Product Catalog, Notification |
 
 **Topic naming convention:** `{context}.{entity}.{event}` — e.g., `order.order.placed`, `payment.payment.authorised`.  
 **Partitioning key:** `orderId` for order/payment/inventory topics; `userId` for user-auth and cart topics.  
@@ -239,9 +239,9 @@ This guarantees at-least-once event delivery without a distributed transaction b
 |---|---|---|---|
 | Kafka broker down (1 of 3) | All async flows | Kafka replication continues on remaining 2 brokers; no data loss (RF=3) | ✅ |
 | Kafka cluster down | All async flows | Services continue to accept requests; outbox rows queue up; events delivered when Kafka recovers | ✅ (with lag) |
-| Redis down | Cart reads, auth token checks | Cart Service falls back to DB read for cart (degraded performance); auth falls back to stateless JWT validation only (no refresh) | ⚠️ Degraded |
+| Redis down | Cart reads/writes, auth token checks | Cart has no DB fallback (ADR-0010 — Redis is the sole cart store) — `/cart/**` returns 503 until Redis recovers; RDB snapshots (60s interval) bound data loss on restart. Auth falls back to stateless JWT validation only (no refresh) | ⚠️ Degraded |
 | Payment Gateway down | Checkout | Order Service returns 503; order not persisted; outbox relay retries on recovery | ✅ |
-| Search Index down | Product search | Product Catalog falls back to MySQL full-text search (per ADR-010) | ⚠️ Degraded |
+| MySQL full-text search slow/unavailable | Product search | No fallback in Phase 1 (ADR-0013 — MySQL FTS is the primary, not a fallback); search returns 503. Elasticsearch evaluated in Phase 2 if this becomes frequent | ⚠️ Degraded |
 | MySQL (one service DB) down | Owning service only | Other services unaffected (no shared DB); owning service returns 503 | ✅ (isolated) |
 | Notification provider down | Email / SMS / Push delivery | Retry up to 3× with back-off; DLQ after 4th failure; no impact on order flow | ✅ |
 

@@ -132,6 +132,7 @@ erDiagram
         VARCHAR(500)    slug            UK
         TEXT            description     NULL
         VARCHAR(50)     status          "DRAFT | PUBLISHED | UNPUBLISHED | ARCHIVED"
+        VARCHAR(20)     unpublish_reason NULL "MANUAL | OUT_OF_STOCK — set only when status=UNPUBLISHED"
         BIGINT          base_price      "paise — must be > 0 when published"
         BIGINT          version         "optimistic lock"
         TIMESTAMP       published_at    NULL
@@ -182,7 +183,7 @@ erDiagram
 - `products(slug)` — unique
 - `products(category_id, status)` — browse by category
 - `products(status, published_at)` — ordered product listings
-- `products(title)` FULLTEXT — MySQL full-text search fallback (per ADR-010)
+- `products(title, description)` FULLTEXT — MySQL full-text search, primary search strategy for Phase 1 (per ADR-0013)
 - `product_variants(sku)` — unique
 - `product_images(product_id, is_primary)` — fetch primary image
 
