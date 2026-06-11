@@ -236,7 +236,7 @@ erDiagram
 
     returns {
         CHAR(36)        id              PK
-        CHAR(36)        order_id        FK UK "one return per order"
+        CHAR(36)        order_id        FK,UK "one return per order"
         VARCHAR(50)     status          "REQUESTED | APPROVED | REJECTED | COMPLETED"
         TEXT            reason
         TIMESTAMP       window_expires_at   "30 days from OrderDelivered"
