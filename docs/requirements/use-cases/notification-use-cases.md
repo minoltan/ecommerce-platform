@@ -54,7 +54,7 @@ graph TD
 | UC-NT-01 | Order Confirmation | `OrderConfirmed` | Email, SMS | No — transactional |
 | UC-NT-02 | Shipping Notification | `OrderShipped` | Email, Push | No — transactional |
 | UC-NT-03 | Payment Failure Alert | `PaymentFailed` | Email | No — transactional |
-| UC-NT-04 | Refund Confirmation | `RefundIssued` | Email | No — transactional |
+| UC-NT-04 | Refund Confirmation | `RefundProcessed` | Email | No — transactional |
 | UC-NT-05 | Cart Abandonment Reminder | `CartAbandoned` (+30 min) | Email | Yes — marketing |
 | UC-NT-06 | Low Stock Alert | `LowStockAlertTriggered` | Email (admin) | No — operational |
 | UC-NT-07 | Welcome / Verification | `UserRegistered` | Email | No — transactional |
@@ -68,7 +68,7 @@ graph TD
 ```
 IF notification type = TRANSACTIONAL → always send (ignore preferences)
 IF notification type = MARKETING     → check opt-in; suppress if opted out
-IF delivery fails                    → retry up to 3 times (exponential back-off: 1m, 5m, 15m)
-IF 3rd retry fails                   → route to DLQ; record NotificationFailed
+IF delivery fails                    → retry up to 4 attempts (ADR-0012 schedule: immediate, +30s, +5min, +30min)
+IF 4th attempt fails                 → route to DLQ; record NotificationFailed
 ALL dispatches                       → log with correlationId, templateId, status, timestamp
 ```

@@ -387,12 +387,23 @@ erDiagram
         BIGINT          id              PK "auto_increment — append-only audit log"
         CHAR(36)        inventory_item_id   FK
         VARCHAR(100)    sku
-        VARCHAR(50)     movement_type   "REPLENISH|RESERVE|COMMIT|RELEASE|ADJUST|EXPIRE"
+        VARCHAR(50)     movement_type   "REPLENISH|RESERVE|COMMIT|RELEASE|RESTORE|ADJUST|EXPIRE"
         INT             quantity_delta   "positive = in, negative = out"
         VARCHAR(50)     reason_code     NULL "for ADJUST: DAMAGE|THEFT|AUDIT|EXPIRY|OTHER"
         CHAR(36)        reference_id    NULL "orderId or adjustmentId"
         CHAR(36)        performed_by    NULL "userId for manual adjustments"
         TIMESTAMP       created_at
+    }
+
+    inventory_outbox {
+        BIGINT          id              PK "auto_increment"
+        CHAR(36)        aggregate_id    "inventoryItemId or reservationId"
+        VARCHAR(100)    event_type      "StockReserved | StockReservationFailed | StockReleased | StockRestored"
+        JSON            payload
+        VARCHAR(36)     correlation_id
+        BOOLEAN         published       "DEFAULT FALSE"
+        TIMESTAMP       created_at
+        TIMESTAMP       published_at    NULL
     }
 
     inventory_items ||--o{ stock_reservations : "has"
@@ -405,6 +416,12 @@ erDiagram
 - `stock_reservations(order_id)` — unique, saga lookup
 - `stock_reservations(status, expires_at)` — expiry job query
 - `stock_movements(inventory_item_id, created_at DESC)` — audit history
+- `inventory_outbox(published, created_at)` — relay poll query
+
+**`inventory_outbox` scope (ADR-0014):** covers only the four saga-critical events
+(`StockReserved`, `StockReservationFailed`, `StockReleased`, `StockRestored`) consumed
+by `order_saga_state`'s `SagaJoinService`. `ProductOutOfStock` and
+`LowStockAlertTriggered` remain direct-publish (no saga depends on them).
 
 ---
 
@@ -445,7 +462,7 @@ erDiagram
         VARCHAR(50)     notification_type "TRANSACTIONAL | MARKETING | OPERATIONAL"
         VARCHAR(50)     channel         "EMAIL | SMS | PUSH"
         VARCHAR(50)     status          "PENDING | SENT | FAILED | DLQ | SUPPRESSED"
-        INT             retry_count     "DEFAULT 0, max 3"
+        INT             retry_count     "DEFAULT 0, max 4 (ADR-0012)"
         TIMESTAMP       next_retry_at   NULL
         VARCHAR(36)     correlation_id
         TEXT            recipient       "email address or phone number"
@@ -476,7 +493,7 @@ erDiagram
 | Product Catalog | `catalog_db` | categories, products, product_variants, product_images, product_attributes | None (Kafka publish acceptable loss) | None |
 | Order | `order_db` | orders, order_line_items, order_notes, returns, return_line_items | order_outbox | customer_id → user_db (logical) |
 | Payment | `payment_db` | payments, refunds | payment_outbox | order_id → order_db (logical) |
-| Inventory | `inventory_db` | inventory_items, stock_reservations, stock_movements | None (Kafka publish acceptable loss) | sku → catalog_db (logical) |
+| Inventory | `inventory_db` | inventory_items, stock_reservations, stock_movements, inventory_outbox | `inventory_outbox` (StockReserved, StockReservationFailed, StockReleased, StockRestored only — ADR-0014); other events Kafka publish acceptable loss | sku → catalog_db (logical) |
 | Notification | `notification_db` | notifications, notification_preferences, notification_templates | None | user_id → user_db (logical) |
 | Cart | Redis only | — | — | — |
 

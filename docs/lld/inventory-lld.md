@@ -520,9 +520,9 @@ viewed from Inventory's side.
 | ID | Item | Owner | Status |
 |---|---|---|---|
 | OQ-ER-01 | `available_qty` GENERATED column vs. application-computed | Architect | **Resolved in this LLD** — GENERATED (§7.1) |
-| OQ-LLD-IN-01 | Add `inventory_outbox` for `StockReserved`/`StockReservationFailed`/`StockReleased`/`StockRestored` (§10, Option B) — update `er-diagrams.md` §6 and §8 | Architect | Open — recommend folding into ADR-0014 |
-| OQ-LLD-IN-02 | Add `StockReleased` and `StockRestored` to `container-diagram.md` §5 `inventory.*` topic row (§9.2) | Architect | Open — small follow-up PR, bundle with `payment-lld.md`'s `PaymentVoided` gap |
-| OQ-LLD-IN-03 | `sequence-diagrams.md` SD-06 says "FOR UPDATE (optimistic lock)" — fix to "(pessimistic lock)" per §6 | Architect | Open — small follow-up |
+| OQ-LLD-IN-01 | Add `inventory_outbox` for `StockReserved`/`StockReservationFailed`/`StockReleased`/`StockRestored` (§10, Option B) — update `er-diagrams.md` §6 and §8 | Architect | **Resolved** — adopted in ADR-0014 (SA-019); `er-diagrams.md` §6/§8 and `component-diagrams.md` §8 updated in cross-cutting HLD sync PR (SA-020) |
+| OQ-LLD-IN-02 | Add `StockReleased` and `StockRestored` to `container-diagram.md` §5 `inventory.*` topic row (§9.2) | Architect | **Resolved** — cross-cutting HLD sync PR (SA-020) |
+| OQ-LLD-IN-03 | `sequence-diagrams.md` SD-06 says "FOR UPDATE (optimistic lock)" — fix to "(pessimistic lock)" per §6 | Architect | **Resolved** — cross-cutting HLD sync PR (SA-020) |
 | OQ-LLD-IN-04 | "Saga E" naming collision: SD-10 ("Stockout → Catalog Unpublish") vs. order-state-machine.md ("Return Flow") — rename one of the two in its source HLD | Architect | Open |
 | OQ-LLD-IN-05 | `docs/api-specs/inventory-service-api.yaml` does not yet exist — needs creation/reconciliation against `InventoryController`'s endpoints (component-diagrams.md §8) | Architect | Open |
 

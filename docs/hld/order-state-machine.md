@@ -63,7 +63,7 @@ stateDiagram-v2
     PROCESSING --> SHIPPED : ShipmentCreated
     PROCESSING --> CANCELLATION_REQUESTED : CustomerCancelRequest
 
-    CANCELLATION_REQUESTED --> CANCELLED : FulfilmentCancelled → RefundIssued + releaseStock
+    CANCELLATION_REQUESTED --> CANCELLED : FulfilmentCancelled → RefundProcessed + releaseStock
     CANCELLATION_REQUESTED --> SHIPPED : cannotCancel (already dispatched)
 
     SHIPPED --> DELIVERED : DeliveryConfirmed\nor autoConfirm (+7 days)
@@ -73,7 +73,7 @@ stateDiagram-v2
     RETURN_REQUESTED --> RETURN_APPROVED : ReturnApproved (ops)
     RETURN_REQUESTED --> DELIVERED : ReturnRejected
 
-    RETURN_APPROVED --> RETURN_COMPLETED : RefundIssued ∧ StockRestored
+    RETURN_APPROVED --> RETURN_COMPLETED : RefundProcessed ∧ StockRestored
 
     CANCELLED --> [*]
     RETURN_COMPLETED --> [*]
@@ -97,13 +97,13 @@ stateDiagram-v2
 | T-10 | `CONFIRMED` | `CANCELLED` | `CustomerCancelRequest` (pre-fulfilment) | Customer | `OrderCancelled` | `PaymentVoided`, `StockReleased` |
 | T-11 | `PROCESSING` | `SHIPPED` | `ShipmentCreated` event | Fulfilment Svc | `OrderShipped` | — |
 | T-12 | `PROCESSING` | `CANCELLATION_REQUESTED` | `CustomerCancelRequest` (in-fulfilment) | Customer | `CancellationRequested` | — |
-| T-13 | `CANCELLATION_REQUESTED` | `CANCELLED` | `FulfilmentCancelled` | Fulfilment Svc | `OrderCancelled` | `RefundIssued`, `StockReleased` |
+| T-13 | `CANCELLATION_REQUESTED` | `CANCELLED` | `FulfilmentCancelled` | Fulfilment Svc | `OrderCancelled` | `RefundProcessed`, `StockReleased` |
 | T-14 | `CANCELLATION_REQUESTED` | `SHIPPED` | Already dispatched — cancel rejected | Fulfilment Svc | `CancellationRejected`, `OrderShipped` | — |
 | T-15 | `SHIPPED` | `DELIVERED` | `DeliveryConfirmed` or +7-day auto | Courier / Timer | `OrderDelivered` | — |
 | T-16 | `DELIVERED` | `RETURN_REQUESTED` | Customer requests return (≤ 30 days) | Customer | `ReturnRequested` | — |
 | T-17 | `RETURN_REQUESTED` | `RETURN_APPROVED` | Ops approves return | Ops | `ReturnApproved` | — |
 | T-18 | `RETURN_REQUESTED` | `DELIVERED` | Ops rejects return | Ops | `ReturnRejected` | — |
-| T-19 | `RETURN_APPROVED` | `RETURN_COMPLETED` | `RefundIssued` + `StockRestored` received | Payment + Inventory (via Kafka) | `ReturnCompleted` | — |
+| T-19 | `RETURN_APPROVED` | `RETURN_COMPLETED` | `RefundProcessed` + `StockRestored` received | Payment + Inventory (via Kafka) | `ReturnCompleted` | — |
 
 ---
 
@@ -152,7 +152,7 @@ ReturnRequested
   → Ops approval
     → Approved: Order → RETURN_APPROVED
       → Inventory.restoreStock()    [StockRestored]
-      → Payment.refund()            [RefundIssued]
+      → Payment.refund()            [RefundProcessed]
       → Order → RETURN_COMPLETED
     → Rejected: Order → DELIVERED
 ```
