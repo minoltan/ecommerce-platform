@@ -21,7 +21,7 @@ This document covers the relational data model for all five MySQL 8 services. Ca
 | All monetary columns are `BIGINT` (paise) | ADR-001 — no floating-point for money |
 | No foreign keys across schema boundaries | One schema per service — cross-context refs are by ID only (logical, not enforced) |
 | All tables have `created_at`, `updated_at` (`TIMESTAMP DEFAULT CURRENT_TIMESTAMP`) | Audit trail and soft-delete support |
-| Soft deletes via `deleted_at TIMESTAMP NULL` where stated | Retain records for order history referential integrity |
+| Soft deletes via `deleted_at TIMESTAMP` where stated | Retain records for order history referential integrity |
 | Outbox tables (`*_outbox`) included for saga-participant services | Transactional event publishing pattern |
 | `version BIGINT DEFAULT 0` on mutable aggregates | Optimistic locking — incremented on every write |
 
@@ -40,19 +40,19 @@ erDiagram
         VARCHAR(50)     status          "UNVERIFIED | ACTIVE | DEACTIVATED"
         VARCHAR(50)     role            "CUSTOMER | ADMIN | INVENTORY_MANAGER"
         VARCHAR(255)    full_name
-        TIMESTAMP       email_verified_at   NULL
-        TIMESTAMP       deactivated_at      NULL
+        TIMESTAMP       email_verified_at
+        TIMESTAMP       deactivated_at
         BIGINT          version         "optimistic lock"
         TIMESTAMP       created_at
         TIMESTAMP       updated_at
-        TIMESTAMP       deleted_at      NULL "soft delete"
+        TIMESTAMP       deleted_at "soft delete"
     }
 
     user_addresses {
         CHAR(36)        id              PK
         CHAR(36)        user_id         FK
         VARCHAR(255)    line1
-        VARCHAR(255)    line2           NULL
+        VARCHAR(255)    line2
         VARCHAR(100)    city
         VARCHAR(100)    state
         VARCHAR(20)     pincode
@@ -60,7 +60,7 @@ erDiagram
         BOOLEAN         is_default
         TIMESTAMP       created_at
         TIMESTAMP       updated_at
-        TIMESTAMP       deleted_at      NULL
+        TIMESTAMP       deleted_at
     }
 
     email_verifications {
@@ -68,7 +68,7 @@ erDiagram
         CHAR(36)        user_id         FK
         VARCHAR(255)    token           UK
         TIMESTAMP       expires_at
-        TIMESTAMP       used_at         NULL
+        TIMESTAMP       used_at
         TIMESTAMP       created_at
     }
 
@@ -77,7 +77,7 @@ erDiagram
         CHAR(36)        user_id         FK
         VARCHAR(255)    token_hash      UK
         TIMESTAMP       expires_at
-        TIMESTAMP       used_at         NULL
+        TIMESTAMP       used_at
         TIMESTAMP       created_at
     }
 
@@ -89,7 +89,7 @@ erDiagram
         VARCHAR(36)     correlation_id
         BOOLEAN         published       "DEFAULT FALSE"
         TIMESTAMP       created_at
-        TIMESTAMP       published_at    NULL
+        TIMESTAMP       published_at
     }
 
     users ||--o{ user_addresses : "has"
@@ -115,13 +115,13 @@ erDiagram
 erDiagram
     categories {
         CHAR(36)        id              PK
-        CHAR(36)        parent_id       NULL FK "self-reference — NULL = root"
+        CHAR(36)        parent_id       FK "self-reference — NULL = root"
         VARCHAR(255)    name
         VARCHAR(255)    slug            UK
         INT             sort_order      "DEFAULT 0"
         TIMESTAMP       created_at
         TIMESTAMP       updated_at
-        TIMESTAMP       deleted_at      NULL
+        TIMESTAMP       deleted_at
     }
 
     products {
@@ -130,16 +130,16 @@ erDiagram
         VARCHAR(100)    sku             UK "platform-wide unique"
         VARCHAR(500)    title
         VARCHAR(500)    slug            UK
-        TEXT            description     NULL
+        TEXT            description
         VARCHAR(50)     status          "DRAFT | PUBLISHED | UNPUBLISHED | ARCHIVED"
-        VARCHAR(20)     unpublish_reason NULL "MANUAL | OUT_OF_STOCK — set only when status=UNPUBLISHED"
+        VARCHAR(20)     unpublish_reason "MANUAL | OUT_OF_STOCK — set only when status=UNPUBLISHED"
         BIGINT          base_price      "paise — must be > 0 when published"
         BIGINT          version         "optimistic lock"
-        TIMESTAMP       published_at    NULL
-        TIMESTAMP       archived_at     NULL
+        TIMESTAMP       published_at
+        TIMESTAMP       archived_at
         TIMESTAMP       created_at
         TIMESTAMP       updated_at
-        TIMESTAMP       deleted_at      NULL "soft delete — retained for order history"
+        TIMESTAMP       deleted_at "soft delete — retained for order history"
     }
 
     product_variants {
@@ -201,13 +201,13 @@ erDiagram
         VARCHAR(50)     status          "PENDING|CONFIRMED|PROCESSING|SHIPPED|DELIVERED|CANCELLED|FAILED"
         BIGINT          total_amount    "paise — immutable after OrderPlaced"
         BIGINT          discount_amount "paise — from coupon at cart checkout"
-        VARCHAR(100)    coupon_code     NULL
+        VARCHAR(100)    coupon_code
         VARCHAR(36)     correlation_id  "from CartCheckedOut event"
         JSON            shipping_address "snapshot — address as-was at order time"
-        TIMESTAMP       confirmed_at    NULL
-        TIMESTAMP       shipped_at      NULL
-        TIMESTAMP       delivered_at    NULL
-        TIMESTAMP       cancelled_at    NULL
+        TIMESTAMP       confirmed_at
+        TIMESTAMP       shipped_at
+        TIMESTAMP       delivered_at
+        TIMESTAMP       cancelled_at
         BIGINT          version         "optimistic lock — prevents concurrent state changes"
         TIMESTAMP       created_at
         TIMESTAMP       updated_at
@@ -240,8 +240,8 @@ erDiagram
         VARCHAR(50)     status          "REQUESTED | APPROVED | REJECTED | COMPLETED"
         TEXT            reason
         TIMESTAMP       window_expires_at   "30 days from OrderDelivered"
-        TIMESTAMP       approved_at     NULL
-        TIMESTAMP       rejected_at     NULL
+        TIMESTAMP       approved_at
+        TIMESTAMP       rejected_at
         TIMESTAMP       created_at
         TIMESTAMP       updated_at
     }
@@ -261,7 +261,7 @@ erDiagram
         VARCHAR(36)     correlation_id
         BOOLEAN         published       "DEFAULT FALSE"
         TIMESTAMP       created_at
-        TIMESTAMP       published_at    NULL
+        TIMESTAMP       published_at
     }
 
     orders ||--o{ order_line_items : "contains"
@@ -291,15 +291,15 @@ erDiagram
         CHAR(36)        customer_id     "logical ref — no FK"
         VARCHAR(50)     status          "INITIATED|AUTHORISED|CAPTURED|FAILED|EXPIRED|CANCELLED"
         BIGINT          amount          "paise — must equal order total_amount"
-        VARCHAR(255)    gateway_ref     NULL "Payment Gateway's intentId"
-        VARCHAR(255)    gateway_token   NULL "tokenised card ref — NOT card data"
+        VARCHAR(255)    gateway_ref "Payment Gateway's intentId"
+        VARCHAR(255)    gateway_token "tokenised card ref — NOT card data"
         VARCHAR(255)    idempotency_key UK "orderId-based; prevents duplicate charges"
         VARCHAR(50)     gateway         "STRIPE | RAZORPAY"
         TIMESTAMP       initiated_at
-        TIMESTAMP       authorised_at   NULL
-        TIMESTAMP       captured_at     NULL
-        TIMESTAMP       failed_at       NULL
-        TIMESTAMP       expired_at      NULL
+        TIMESTAMP       authorised_at
+        TIMESTAMP       captured_at
+        TIMESTAMP       failed_at
+        TIMESTAMP       expired_at
         BIGINT          version         "optimistic lock"
         TIMESTAMP       created_at
         TIMESTAMP       updated_at
@@ -311,12 +311,12 @@ erDiagram
         CHAR(36)        order_id        "logical ref — no FK"
         VARCHAR(50)     status          "INITIATED|PROCESSED|FAILED"
         BIGINT          amount          "paise — CHECK amount > 0"
-        VARCHAR(255)    gateway_refund_ref   NULL
+        VARCHAR(255)    gateway_refund_ref
         VARCHAR(255)    idempotency_key     UK
-        TEXT            reason          NULL
+        TEXT            reason
         TIMESTAMP       initiated_at
-        TIMESTAMP       processed_at    NULL
-        TIMESTAMP       failed_at       NULL
+        TIMESTAMP       processed_at
+        TIMESTAMP       failed_at
         TIMESTAMP       created_at
         TIMESTAMP       updated_at
     }
@@ -329,7 +329,7 @@ erDiagram
         VARCHAR(36)     correlation_id
         BOOLEAN         published       "DEFAULT FALSE"
         TIMESTAMP       created_at
-        TIMESTAMP       published_at    NULL
+        TIMESTAMP       published_at
     }
 
     payments ||--o{ refunds : "may have"
@@ -379,8 +379,8 @@ erDiagram
         INT             quantity        "CHECK quantity >= 1"
         VARCHAR(50)     status          "ACTIVE | COMMITTED | RELEASED | EXPIRED"
         TIMESTAMP       expires_at      "created_at + 15 minutes"
-        TIMESTAMP       committed_at    NULL "on OrderConfirmed"
-        TIMESTAMP       released_at     NULL "on OrderCancelled / OrderFailed / Expiry"
+        TIMESTAMP       committed_at "on OrderConfirmed"
+        TIMESTAMP       released_at "on OrderCancelled / OrderFailed / Expiry"
         TIMESTAMP       created_at
     }
 
@@ -390,9 +390,9 @@ erDiagram
         VARCHAR(100)    sku
         VARCHAR(50)     movement_type   "REPLENISH|RESERVE|COMMIT|RELEASE|RESTORE|ADJUST|EXPIRE"
         INT             quantity_delta   "positive = in, negative = out"
-        VARCHAR(50)     reason_code     NULL "for ADJUST: DAMAGE|THEFT|AUDIT|EXPIRY|OTHER"
-        CHAR(36)        reference_id    NULL "orderId or adjustmentId"
-        CHAR(36)        performed_by    NULL "userId for manual adjustments"
+        VARCHAR(50)     reason_code "for ADJUST: DAMAGE|THEFT|AUDIT|EXPIRY|OTHER"
+        CHAR(36)        reference_id "orderId or adjustmentId"
+        CHAR(36)        performed_by "userId for manual adjustments"
         TIMESTAMP       created_at
     }
 
@@ -404,7 +404,7 @@ erDiagram
         VARCHAR(36)     correlation_id
         BOOLEAN         published       "DEFAULT FALSE"
         TIMESTAMP       created_at
-        TIMESTAMP       published_at    NULL
+        TIMESTAMP       published_at
     }
 
     inventory_items ||--o{ stock_reservations : "has"
@@ -447,7 +447,7 @@ erDiagram
         CHAR(36)        id              PK
         VARCHAR(100)    template_key    UK "e.g. ORDER_CONFIRMED_EMAIL"
         VARCHAR(50)     channel         "EMAIL | SMS | PUSH"
-        VARCHAR(500)    subject         NULL "email only"
+        VARCHAR(500)    subject "email only"
         TEXT            body_template   "Handlebars / Thymeleaf"
         VARCHAR(10)     locale          "DEFAULT 'en'"
         BOOLEAN         is_active       "DEFAULT TRUE"
@@ -464,12 +464,12 @@ erDiagram
         VARCHAR(50)     channel         "EMAIL | SMS | PUSH"
         VARCHAR(50)     status          "PENDING | SENT | FAILED | DLQ | SUPPRESSED"
         INT             retry_count     "DEFAULT 0, max 4 (ADR-0012)"
-        TIMESTAMP       next_retry_at   NULL
+        TIMESTAMP       next_retry_at
         VARCHAR(36)     correlation_id
         TEXT            recipient       "email address or phone number"
         JSON            template_data   "variables injected into template"
-        TIMESTAMP       sent_at         NULL
-        TIMESTAMP       failed_at       NULL
+        TIMESTAMP       sent_at
+        TIMESTAMP       failed_at
         TIMESTAMP       created_at
     }
 
