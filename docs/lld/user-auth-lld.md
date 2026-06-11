@@ -1,348 +1,465 @@
-# LLD: User / Auth Service
+# User/Auth Service — Low-Level Design
 
-**Artefact type:** Low-Level Design  
-**Phase:** ARCH  
-**Bounded context:** User / Auth  
-**Status:** Draft  
-**Last updated:** 2026-06-08  
-**Dependencies:** SA-001, SA-002, SA-003, SA-004, SA-005, ADR-0008, ADR-0011  
+**Artefact type:** LLD (C4 Level 4)
+**Phase:** ARCH
+**Bounded context:** User / Auth
+**Status:** Draft
+**Version:** 0.1
+**Date:** 2026-06-11
+**Author:** System Architect
+**Inputs:**
+- `docs/hld/container-diagram.md` v0.1 §3, §5, §6
+- `docs/hld/component-diagrams.md` v0.1 §3
+- `docs/hld/er-diagrams.md` v0.1 §2, §8
+- `docs/hld/sequence-diagrams.md` v0.1 (SD-01, SD-02, SD-03)
+- `docs/adr/ADR-0002-kafka-topic-partitioning.md`
+- `docs/adr/ADR-0008-database-per-service.md`
+- `docs/adr/ADR-0011-jwt-strategy.md` — **authoritative source for token design**
+- `docs/requirements/non-functional-requirements.md` (NFR-SEC-001, NFR-SEC-006)
+- `docs/api-specs/user-service-api.yaml` v0.1.0-draft
 
 ---
 
-## 1. Aggregate Model
+## 1. Scope
 
-### Aggregate Root: `User`
+This document is the implementation-ready design for the **User/Auth Service** — the
+identity provider for the platform and the upstream-most bounded context (no inbound
+domain-event dependencies; every other context that needs user identity does so via a
+logical reference, never a cross-schema query).
 
-The `User` aggregate is the single consistency boundary for identity and authentication.
+**Covers:**
+- Aggregate model (`User`, `UserAddress`) and invariants
+- `user_db` schema (refines `er-diagrams.md` §2)
+- Authentication/session design — reconciles ADR-0011's JWT/refresh-token decision
+  against the Redis-based implementation already shown in `component-diagrams.md` §3
+  and `sequence-diagrams.md` SD-02/SD-03
+- Sequence diagrams for registration, login, and refresh-token rotation (refines SD-01–SD-03)
+- Saga/event participation: published `user-auth.*` events and topic-map reconciliation
+- API contract reconciliation against `user-service-api.yaml`
+- Consistency strategy (outbox, optimistic locking, rate limiting)
 
-```
-User (Aggregate Root)
-├── id: UserId (CHAR(36) UUID)
-├── email: Email (value object — validated, lowercased, immutable after creation)
-├── passwordHash: PasswordHash (value object — bcrypt, never exposed outside aggregate)
-├── status: UserStatus (UNVERIFIED | ACTIVE | DEACTIVATED)
-├── role: UserRole (CUSTOMER | ADMIN)
-├── version: Long (optimistic lock)
-├── createdAt: Instant
-├── updatedAt: Instant
-│
-├── addresses: List<UserAddress>   (child entity, owned by User)
-│   ├── id: AddressId
-│   ├── label: String (HOME | WORK | OTHER)
-│   ├── line1, line2, city, state, pincode, country
-│   └── isDefault: Boolean
-│
-└── [domain behaviours]
-    ├── register(email, rawPassword) → raises UserRegistered
-    ├── verifyEmail(token) → UNVERIFIED → ACTIVE; raises EmailVerified
-    ├── changePassword(currentRaw, newRaw) → validates current, re-hashes
-    ├── requestPasswordReset() → raises PasswordResetRequested
-    ├── resetPassword(token, newRaw) → validates token, re-hashes
-    ├── deactivate() → ACTIVE → DEACTIVATED; raises UserDeactivated
-    └── addAddress(address) / setDefaultAddress(addressId)
-```
+**Does NOT cover:**
+- Cart guest-session merge logic on `UserLoggedIn` — see Cart LLD (SA-014, not yet written)
+- Notification template content for verification/reset emails — see `notification-lld.md` §5
+- Phase 2 Cognito migration implementation details — §12 covers only the high-level delta;
+  a dedicated ADR is raised if Phase 2 work begins
 
-### Value Objects
+---
+
+## 2. NFR Targets This Design Must Satisfy
+
+| ID | Requirement | Target | Design implication |
+|---|---|---|---|
+| NFR-SEC-001 | Authentication | JWT RS256, 15-min access token, 7-day refresh, asymmetric key rotation | §6 reconciles ADR-0011's token design with the Redis session store; §6.3 covers JWKS rotation |
+| NFR-SEC-006 | API rate limiting | 100 req/min/IP (unauth), 500 req/min/user (auth) | `rate:{userId}:{endpoint}` / `rate:{ip}:register` Redis counters (§6.4), enforced in `AuthService` before DB/bcrypt work |
+| NFR-AVAIL-001 | Overall uptime | 99.9% | `users(email)` unique index is the only hot-path read; no synchronous calls to other services on login/register |
+| NFR-SCALE-001 | Concurrent users | 10,000 | Stateless JWT verification (no Auth round-trip per request, ADR-0011); Redis cluster absorbs session/rate-limit traffic |
+| NFR-CONS-001 | Cross-context eventual consistency | ≤ 2 s | `user_auth_outbox` relay (≤ 500 ms poll, container-diagram.md §7) publishes `UserRegistered`/`UserLoggedIn`/`UserDeactivated` within the window |
+
+---
+
+## 3. Aggregate Model
+
+### 3.1 `User` (Aggregate Root)
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID | Identity |
+| `email` | `Email` (value object) | Unique platform-wide; lowercased and validated on construction; immutable after creation |
+| `passwordHash` | `PasswordHash` (value object) | bcrypt, cost ≥ 12; exposes only `matches(rawPassword)` — never serialised |
+| `status` | enum | `UNVERIFIED \| ACTIVE \| DEACTIVATED` (§5) |
+| `role` | enum | `CUSTOMER \| ADMIN \| INVENTORY_MANAGER` (per `er-diagrams.md` §2 and `user-service-api.yaml`) |
+| `fullName` | String | |
+| `addresses` | `List<UserAddress>` | Child entities, owned by `User` |
+| `emailVerifiedAt` | Instant, nullable | Set by `verifyEmail()` |
+| `deactivatedAt` | Instant, nullable | Set by `deactivate()` |
+| `version` | long | Optimistic lock (concurrent profile updates) |
+| `createdAt` / `updatedAt` | Instant | |
+| `deletedAt` | Instant, nullable | Soft delete (er-diagrams.md §2) |
+
+**Behaviours (commands):** `register(email, rawPassword, fullName)`, `verifyEmail(token)`,
+`login(rawPassword)`, `changePassword(currentRaw, newRaw)`, `requestPasswordReset()`,
+`resetPassword(tokenHash, newRaw)`, `deactivate()`, `addAddress(address)`,
+`setDefaultAddress(addressId)`, `removeAddress(addressId)`.
+
+Each command validates the current `status` against the transition rules in §5 and
+throws `IllegalStateTransitionException` on an illegal transition (e.g., `login()` on a
+`DEACTIVATED` account, or `verifyEmail()` on an already-`ACTIVE` account).
+
+### 3.2 `UserAddress` (Entity, child of `User`)
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID | |
+| `line1`, `line2`, `city`, `state`, `pincode`, `country` | String | `country` defaults `'IN'` |
+| `isDefault` | boolean | Exactly one address per user may be default (INV-UA-01) |
+| `createdAt` / `updatedAt` / `deletedAt` | Instant | Soft delete |
+
+**INV-UA-01:** Setting `isDefault = true` on one address atomically clears the flag on
+all other addresses of the same user — enforced inside `User.setDefaultAddress()`, never
+at the DB layer (no partial unique index on `(user_id, is_default)` — MySQL 8 cannot
+express "at most one TRUE per group" as a constraint).
+
+### 3.3 Value Objects
 
 | Value Object | Validation | Notes |
 |---|---|---|
-| `Email` | RFC 5322 format; lowercase on construction | Immutable after User creation |
-| `PasswordHash` | Min 8 chars on raw; bcrypt cost 12 | Exposes only `matches(rawPassword)` |
-| `UserId` | UUID v4 | Assigned on creation; never changed |
+| `Email` | RFC 5322 format; lowercased on construction | Immutable after `User` creation |
+| `PasswordHash` | Raw password ≥ 8 chars, bcrypt cost ≥ 12 | Never exposed outside the aggregate |
+| `UserId` | UUID v4 | Assigned on creation |
 
-### Domain Events
+### 3.4 Domain Events (published via `user_auth_outbox`)
 
 | Event | Trigger | Payload | Consumers |
 |---|---|---|---|
-| `UserRegistered` | `register()` | userId, email, timestamp | Notification (welcome email) |
-| `EmailVerified` | `verifyEmail()` | userId, email, timestamp | Notification (confirmation) |
-| `PasswordResetRequested` | `requestPasswordReset()` | userId, email, resetToken, expiresAt | Notification (reset email) |
-| `UserDeactivated` | `deactivate()` | userId, timestamp | Notification, Cart (clear cart) |
+| `UserRegistered` | `register()` | `userId, email, correlationId` | Notification (welcome/verification email) |
+| `UserLoggedIn` | successful `login()` | `userId, sessionId, correlationId` | Cart (guest-cart merge, SD-02) |
+| `UserDeactivated` | `deactivate()` | `userId, correlationId` | Notification, Cart (clear cart) |
+| `PasswordResetRequested` | `requestPasswordReset()` | `userId, email, resetTokenHash, expiresAt, correlationId` | Notification (reset email) |
 
-All events are published via `user_auth_outbox` (transactional outbox — ADR-0003).
-
----
-
-## 2. Domain Services
-
-### `AuthenticationService`
-
-Handles login and token lifecycle. Not part of the User aggregate (stateless, cross-cutting).
-
-```
-authenticate(email, rawPassword):
-  → load User by email
-  → validate passwordHash.matches(rawPassword)
-  → check status == ACTIVE
-  → generate access token (JWT RS256, 15 min TTL)
-  → generate refresh token (UUID, store in refresh_tokens table)
-  → publish login event to Redis (rate limiting hook)
-  → return TokenPair
-
-refresh(refreshToken):
-  → lookup refresh_tokens by token value
-  → validate not expired, not revoked
-  → DELETE old refresh_tokens row
-  → generate new access + new refresh token
-  → return new TokenPair
-
-logout(userId, accessTokenJti):
-  → DELETE refresh_tokens for userId (all devices) or specific token
-  → SET Redis: blacklist:{jti} = "1" EX {remaining_access_ttl}
-```
-
-### `EmailVerificationService`
-
-```
-sendVerification(userId, email):
-  → generate token (UUID, store in email_verifications table, 24h TTL)
-  → INSERT user_auth_outbox (EmailVerificationRequested event)
-
-verify(token):
-  → lookup email_verifications by token
-  → validate not expired, not used
-  → User.verifyEmail(token)
-  → mark token as used
-  → INSERT user_auth_outbox (EmailVerified event)
-```
+`EmailVerified` is **not** published as a domain event — `verifyEmail()` is a
+synchronous, idempotent state transition (`UNVERIFIED → ACTIVE`) with no downstream
+consumers; the client receives confirmation directly in the `200` response (SD-01).
 
 ---
 
-## 3. DB Schema (user_db)
+## 4. Component Structure (refines component-diagrams.md §3)
 
-> Cross-reference: SA-005 ER Diagrams. Reproduced here with implementation notes.
+`component-diagrams.md` §3 already shows the target component layout (`AuthController`,
+`UserController`, `AuthService`, `UserService`, `UserRepository`,
+`RefreshTokenRepository`/`TokenBlacklistRepository`/`RateLimitRepository` as Redis
+adapters, `KafkaEventPublisher`). This LLD adds:
+
+- **`EmailVerificationService`** (application layer, not shown in component-diagrams.md
+  §3) — owns `sendVerification()` / `verify()`, backed by a new
+  `EmailVerificationRepository` (JPA, `email_verifications` table). Flagged as
+  **OQ-LLD-UA-04** (component-diagrams.md §3 update).
+- **`PasswordResetService`** (application layer) — owns `requestReset()` / `resetPassword()`,
+  backed by `PasswordResetRepository` (JPA, `password_reset_tokens` table). Same
+  OQ-LLD-UA-04.
+- **`OutboxRelay`** — `user_db` already lists `user_auth_outbox` (er-diagrams.md §2,
+  §8), but component-diagrams.md §3's `infra/` subgraph does not yet show an
+  `OutboxRelay` component or `OutboxRepository`, unlike Order/Payment/Inventory (§7, §8
+  of component-diagrams.md). Same OQ-LLD-UA-04.
+
+---
+
+## 5. State Machine — `User.status`
+
+```mermaid
+stateDiagram-v2
+    [*] --> UNVERIFIED : register()
+    UNVERIFIED --> ACTIVE : verifyEmail(token)
+    ACTIVE --> DEACTIVATED : deactivate()
+    UNVERIFIED --> DEACTIVATED : deactivate() [admin action on stale unverified account]
+    DEACTIVATED --> [*]
+```
+
+| Transition | From | To | Trigger | Notes |
+|---|---|---|---|---|
+| T-UA-01 | `UNVERIFIED` | `ACTIVE` | `POST /auth/verify-email` | Sets `emailVerifiedAt`. Idempotent: re-verifying an already-`ACTIVE` account returns `200` (no-op), not an error — verification links may be clicked twice (email client prefetch) |
+| T-UA-02 | `ACTIVE` | `DEACTIVATED` | `POST /admin/users/{id}/deactivate` (UC-UA-09) or self-service account closure | Publishes `UserDeactivated`; revokes all refresh-token sessions (§6.2) and blacklists the current access token's `jti` |
+| T-UA-03 | `UNVERIFIED` | `DEACTIVATED` | Admin action on stale unverified accounts | Same side effects as T-UA-02 |
+
+**Login guard (not a state transition):** `login()` is permitted only when
+`status = ACTIVE`. `UNVERIFIED` → `403` ("verify your email first");
+`DEACTIVATED` → `403` ("account deactivated"). This is the email-enumeration-safe
+variant — both `403` responses are distinguishable from `401` (wrong password), but
+**not** from each other in a way that confirms account existence (both say "account not
+active").
+
+`DEACTIVATED` is terminal — no reactivation flow exists in `user-auth-use-cases.md`.
+Reactivation, if needed, is an admin-only data-fix operation outside the API surface
+(flagged as **OQ-LLD-UA-05**).
+
+---
+
+## 6. Authentication & Session Strategy (reconciles ADR-0011)
+
+### 6.1 Reconciliation: refresh-token storage
+
+**ADR-0011**'s Decision table specifies refresh tokens as "Opaque (UUID), 7 days,
+`HttpOnly; Secure` cookie" — that describes **client-side** storage. ADR-0011's
+*Negative consequences* section additionally states refresh tokens are stored as "a DB
+row in `refresh_tokens`" with "Index on `token` (UNIQUE) and `user_id`".
+
+`component-diagrams.md` §3, `sequence-diagrams.md` SD-02 and SD-03, and
+`container-diagram.md` §6 (Redis Namespace Map) all implement **server-side refresh
+token storage in Redis** — `refresh:{userId}:{tokenId}` (TTL 7 days) — with **no**
+`refresh_tokens` table in `er-diagrams.md` §2.
+
+This LLD adopts the **Redis-based design as canonical** (it is the more recently
+finalised, code-adjacent set of artefacts — consistent with the naming-reconciliation
+precedent in `notification-lld.md` §5):
+
+- `user_db` does **not** have a `refresh_tokens` table (§7 below matches
+  `er-diagrams.md` §2 as-is — no schema change needed).
+- `container-diagram.md` §3's `user_db` row, which lists "User, role, address,
+  refresh_token tables", is **incorrect** and needs correction to drop "refresh_token
+  tables" — flagged as **OQ-LLD-UA-01**.
+- ADR-0011's *Negative consequences* bullet about a `refresh_tokens` DB row is
+  **superseded** — flagged as **OQ-LLD-UA-02** (ADR-0011 amendment note, same pattern
+  as ADR-0012/OQ-LLD-NT-03: amend, do not renumber/delete).
+
+**Why Redis over a DB table is the right call:** refresh tokens are inherently
+TTL-bound (7 days) and looked up by a single key (`userId` + `tokenId`) on every
+`/auth/refresh` call — a textbook Redis access pattern. A MySQL table would need a
+nightly sweep job for expired rows (as the superseded draft of this LLD specified);
+Redis TTL makes that job unnecessary.
+
+### 6.2 Session lifecycle
+
+| Operation | Redis action | Notes |
+|---|---|---|
+| Login (SD-02) | `SET refresh:{userId}:{tokenId} = tokenHash EX 604800` | One key per active session/device — supports multi-device login natively (resolves OQ-UA-02 from the superseded draft: logout is per-device by default) |
+| Refresh (SD-03) | `DEL refresh:{userId}:{oldTokenId}` then `SET refresh:{userId}:{newTokenId} ... EX 604800` | Rotation — old token single-use (ADR-0011) |
+| Logout (single device) | `DEL refresh:{userId}:{tokenId}`; `SET blacklist:{jti} = 1 EX <remaining access TTL>` | |
+| Logout (all devices) / `deactivate()` (T-UA-02/03) | `SCAN` + `DEL refresh:{userId}:*`; blacklist current `jti` | Used by `UserDeactivated` and "stolen refresh token reuse detected" (SD-03 note) |
+| Password change | Same as "logout all devices" | All sessions invalidated per UC-UA-06 postcondition |
+
+### 6.3 JWKS / key rotation
+
+Per ADR-0011: `GET /auth/.well-known/jwks.json` serves the RSA public key set.
+Rotation procedure: publish new public key alongside the old in the JWKS response →
+sign new tokens with the new key → remove the old key after the 15-minute access-token
+TTL has fully elapsed for all previously-issued tokens.
+
+### 6.4 Rate limiting (NFR-SEC-006)
+
+| Key | TTL | Rule |
+|---|---|---|
+| `rate:{userId}:login` | 15 min sliding | 5 failed attempts → account locked 15 min |
+| `rate:{ip}:register` | 1 hour sliding | 10 attempts/hour → `429` |
+| `rate:{userId}:{endpoint}` (general) | 1 min sliding | 500 req/min/user (NFR-SEC-006) |
+| `rate:{ip}:*` (unauthenticated) | 1 min sliding | 100 req/min/IP (NFR-SEC-006), enforced at API Gateway per container-diagram.md §8 |
+
+---
+
+## 7. Database Schema — `user_db`
+
+`er-diagrams.md` §2 already defines `users`, `user_addresses`, `email_verifications`,
+`password_reset_tokens`, and `user_auth_outbox` — this LLD adopts that schema unchanged
+(no `refresh_tokens` table, per §6.1).
+
+### 7.1 Implementation notes (refines er-diagrams.md §2)
 
 ```sql
--- Core identity
 CREATE TABLE users (
     id                CHAR(36)      NOT NULL PRIMARY KEY,
     email             VARCHAR(255)  NOT NULL,
     password_hash     VARCHAR(255)  NOT NULL,
     status            VARCHAR(20)   NOT NULL DEFAULT 'UNVERIFIED',
     role              VARCHAR(20)   NOT NULL DEFAULT 'CUSTOMER',
+    full_name         VARCHAR(255)  NOT NULL,
+    email_verified_at DATETIME(3)   NULL,
+    deactivated_at    DATETIME(3)   NULL,
     version           BIGINT        NOT NULL DEFAULT 0,
     created_at        DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at        DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted_at        DATETIME(3)   NULL,
     CONSTRAINT uq_users_email UNIQUE (email),
     CONSTRAINT chk_users_status CHECK (status IN ('UNVERIFIED','ACTIVE','DEACTIVATED')),
-    CONSTRAINT chk_users_role CHECK (role IN ('CUSTOMER','ADMIN'))
+    CONSTRAINT chk_users_role   CHECK (role IN ('CUSTOMER','ADMIN','INVENTORY_MANAGER')),
+    INDEX idx_users_status (status)
 );
 
--- Addresses
 CREATE TABLE user_addresses (
     id          CHAR(36)      NOT NULL PRIMARY KEY,
     user_id     CHAR(36)      NOT NULL,
-    label       VARCHAR(20)   NOT NULL DEFAULT 'HOME',
     line1       VARCHAR(255)  NOT NULL,
-    line2       VARCHAR(255),
+    line2       VARCHAR(255)  NULL,
     city        VARCHAR(100)  NOT NULL,
     state       VARCHAR(100)  NOT NULL,
-    pincode     VARCHAR(10)   NOT NULL,
-    country     CHAR(2)       NOT NULL DEFAULT 'IN',
+    pincode     VARCHAR(20)   NOT NULL,
+    country     VARCHAR(100)  NOT NULL DEFAULT 'IN',
     is_default  BOOLEAN       NOT NULL DEFAULT FALSE,
     created_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    INDEX idx_addresses_user (user_id)
+    updated_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted_at  DATETIME(3)   NULL,
+    CONSTRAINT fk_addr_user FOREIGN KEY (user_id) REFERENCES users(id),
+    INDEX idx_addr_user (user_id)
 );
 
--- Email verification tokens
 CREATE TABLE email_verifications (
     id          CHAR(36)      NOT NULL PRIMARY KEY,
     user_id     CHAR(36)      NOT NULL,
-    token       CHAR(36)      NOT NULL,
+    token       VARCHAR(255)  NOT NULL,
     expires_at  DATETIME(3)   NOT NULL,
-    used_at     DATETIME(3),
+    used_at     DATETIME(3)   NULL,
     created_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    UNIQUE KEY uq_email_ver_token (token),
-    INDEX idx_email_ver_user (user_id)
+    CONSTRAINT fk_everif_user FOREIGN KEY (user_id) REFERENCES users(id),
+    UNIQUE KEY uq_everif_token (token)
 );
 
--- Password reset tokens
 CREATE TABLE password_reset_tokens (
     id          CHAR(36)      NOT NULL PRIMARY KEY,
     user_id     CHAR(36)      NOT NULL,
-    token       CHAR(36)      NOT NULL,
+    token_hash  VARCHAR(255)  NOT NULL,
     expires_at  DATETIME(3)   NOT NULL,
-    used_at     DATETIME(3),
+    used_at     DATETIME(3)   NULL,
     created_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    UNIQUE KEY uq_pw_reset_token (token),
-    INDEX idx_pw_reset_user (user_id)
+    CONSTRAINT fk_pwreset_user FOREIGN KEY (user_id) REFERENCES users(id),
+    UNIQUE KEY uq_pwreset_token_hash (token_hash)
 );
 
--- Active refresh tokens (one row per active session)
-CREATE TABLE refresh_tokens (
-    id          CHAR(36)      NOT NULL PRIMARY KEY,
-    user_id     CHAR(36)      NOT NULL,
-    token       CHAR(36)      NOT NULL,
-    device_hint VARCHAR(255),
-    expires_at  DATETIME(3)   NOT NULL,
-    created_at  DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    UNIQUE KEY uq_refresh_token (token),
-    INDEX idx_refresh_user (user_id, expires_at)
-);
-
--- Transactional outbox
 CREATE TABLE user_auth_outbox (
-    id            CHAR(36)      NOT NULL PRIMARY KEY,
-    aggregate_id  CHAR(36)      NOT NULL,
-    event_type    VARCHAR(100)  NOT NULL,
-    payload       JSON          NOT NULL,
-    published     BOOLEAN       NOT NULL DEFAULT FALSE,
-    created_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    published_at  DATETIME(3),
+    id              BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    aggregate_id    CHAR(36)      NOT NULL,
+    event_type      VARCHAR(100)  NOT NULL,
+    payload         JSON          NOT NULL,
+    correlation_id  VARCHAR(36)   NOT NULL,
+    published       BOOLEAN       NOT NULL DEFAULT FALSE,
+    created_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    published_at    DATETIME(3)   NULL,
     INDEX idx_outbox_unpublished (published, created_at)
 );
 ```
 
-**Nightly cleanup jobs:**
+**`token_hash` (not `token`) for `password_reset_tokens`:** the reset token is emailed
+to the user as plaintext but stored as a SHA-256 hash — a DB compromise does not leak
+usable reset tokens. `email_verifications.token` is stored as plaintext because it has
+a much shorter blast radius (verification only transitions `UNVERIFIED → ACTIVE`, no
+credential change) — this asymmetry is intentional, not an oversight.
+
+### 7.2 Cleanup jobs
+
 - `DELETE FROM email_verifications WHERE expires_at < NOW() - INTERVAL 7 DAY`
 - `DELETE FROM password_reset_tokens WHERE expires_at < NOW() - INTERVAL 7 DAY`
-- `DELETE FROM refresh_tokens WHERE expires_at < NOW()`
 - `DELETE FROM user_auth_outbox WHERE published = TRUE AND published_at < NOW() - INTERVAL 7 DAY`
 
----
+(No `refresh_tokens` cleanup job — Redis TTL handles expiry, per §6.1.)
 
-## 4. Redis Caching Strategy
+### 7.3 Indexes (unchanged from er-diagrams.md §2)
 
-| Key | TTL | Content | Written by | Read by |
-|---|---|---|---|---|
-| `refresh:{userId}:{tokenId}` | 7 days | `"active"` | Login / Refresh | Logout |
-| `blacklist:{jti}` | remaining access TTL | `"1"` | Logout / Force-revoke | All services (per request) |
-| `rate:{userId}:login` | 15 min sliding | failed attempt count | AuthenticationService | AuthenticationService |
-| `rate:{ip}:register` | 1 hour sliding | attempt count | UserController | UserController |
-
-**Rate limiting rules:**
-- Login: 5 failed attempts per userId per 15 minutes → lock account for 15 minutes
-- Register: 10 attempts per IP per hour → 429 Too Many Requests
+- `users(email)` — unique, hot path on every login
+- `users(status)` — admin filtering, login guard
+- `email_verifications(token)` — unique, lookup on verify
+- `password_reset_tokens(token_hash)` — unique, lookup on reset
+- `user_auth_outbox(published, created_at)` — outbox relay poll
 
 ---
 
-## 5. API Contract (REST)
+## 8. Sequence Diagrams
 
-Full OpenAPI spec: `docs/api-specs/user-auth-service-api.yaml`
+This LLD does not redraw SD-01–SD-03 (`sequence-diagrams.md` §3–§5) — they already
+match the design in §6. This section adds one flow not yet diagrammed at HLD level:
+account deactivation and its session-revocation side effects (T-UA-02/03, §6.2).
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| POST | `/auth/register` | None | Register new user |
-| POST | `/auth/verify-email` | None | Verify email with token |
-| POST | `/auth/login` | None | Authenticate; returns access + refresh tokens |
-| POST | `/auth/refresh` | Refresh cookie | Rotate refresh token; return new access token |
-| POST | `/auth/logout` | Bearer | Revoke refresh token; blacklist access token |
-| POST | `/auth/request-password-reset` | None | Send reset email |
-| POST | `/auth/reset-password` | None | Set new password with reset token |
-| GET | `/users/{userId}` | Bearer (self or ADMIN) | Get user profile |
-| PUT | `/users/{userId}` | Bearer (self) | Update profile (name, phone) |
-| POST | `/users/{userId}/addresses` | Bearer (self) | Add address |
-| PUT | `/users/{userId}/addresses/{addressId}` | Bearer (self) | Update address |
-| DELETE | `/users/{userId}/addresses/{addressId}` | Bearer (self) | Remove address |
-| GET | `/auth/.well-known/jwks.json` | None | RSA public key (JWKS format) |
-
-**Response codes:**
-- `201` registration success (verification email sent)
-- `200` login / refresh success
-- `204` logout success
-- `400` validation error (email format, password too weak)
-- `401` invalid credentials / expired token
-- `403` account not active (UNVERIFIED or DEACTIVATED)
-- `409` email already registered
-- `429` rate limit exceeded
-
----
-
-## 6. Sequence Diagrams (Key Flows)
-
-> Full sequence diagrams: SA-004 (`docs/hld/sequence-diagrams.md` — SD-01, SD-02, SD-03)
-
-### Login + Token Issuance (abbreviated)
+### 8.1 LLD-SD-01 — Admin Deactivation (T-UA-02)
 
 ```mermaid
 sequenceDiagram
-    participant C as Client
+    actor Admin
     participant GW as API Gateway
     participant UA as User/Auth Service
-    participant DB as user_db (MySQL)
-    participant R as Redis
+    participant UDB as user_db
+    participant Redis
+    participant Kafka
 
-    C->>GW: POST /auth/login {email, password}
-    GW->>UA: forward
-    UA->>DB: SELECT * FROM users WHERE email = ?
-    UA->>UA: bcrypt.verify(password, hash)
-    UA->>DB: INSERT INTO refresh_tokens (userId, token, expiresAt)
-    UA->>R: SET rate:{userId}:login 0 EX 900 (reset on success)
-    UA->>GW: 200 {accessToken, expiresIn: 900}
-    Note over GW,C: Set-Cookie: refreshToken={token}; HttpOnly; Secure
-    GW->>C: 200 {accessToken, expiresIn: 900}
-```
+    Admin->>GW: POST /admin/users/{userId}/deactivate
+    GW->>UA: forward (role=ADMIN required)
 
-### Token Verification (per-request, all services)
+    UA->>UDB: BEGIN TX — UPDATE users SET status=DEACTIVATED, deactivated_at=now()
+    UA->>UDB: INSERT user_auth_outbox (UserDeactivated)
+    UDB-->>UA: committed ✓
 
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant Svc as Any Service
-    participant R as Redis
+    UA->>Redis: SCAN refresh:{userId}:* → DEL each key
+    UA->>Redis: SET blacklist:{currentJti} = 1 EX <remaining access TTL> (if active session)
 
-    C->>Svc: GET /api/resource (Authorization: Bearer {jwt})
-    Svc->>Svc: verify JWT signature (cached RSA public key)
-    Svc->>Svc: check exp claim
-    Svc->>R: GET blacklist:{jti}
-    alt blacklist hit
-        Svc->>C: 401 Unauthorized
-    else not blacklisted
-        Svc->>C: 200 (proceed with request)
-    end
+    UA-->>GW: HTTP 200 {status: "DEACTIVATED"}
+    GW-->>Admin: HTTP 200
+
+    Note over UA: Outbox relay fires
+    UA->>Kafka: PUBLISH user-auth.user.deactivated {userId, correlationId}
 ```
 
 ---
 
-## 7. Consistency Strategy
+## 9. Saga / Event Participation Summary
+
+### 9.1 Published events
+
+| Event | Topic | Consumers | Status |
+|---|---|---|---|
+| `UserRegistered` | `user-auth.user.registered` | Notification | ✅ In `container-diagram.md` §5 |
+| `UserLoggedIn` | `user-auth.user.logged-in` | Cart | ✅ In `container-diagram.md` §5 |
+| `UserDeactivated` | `user-auth.user.deactivated` | Notification, Cart | ✅ In `container-diagram.md` §5 |
+| `PasswordResetRequested` | `user-auth.user.password-reset-requested` | Notification | ❌ Missing from `container-diagram.md` §5's `user-auth.*` "Key events" list — flagged as **OQ-LLD-UA-03** |
+
+User/Auth has **no consumed events** — it is the upstream-most context (no
+`KafkaEventConsumer` in component-diagrams.md §3), consistent with the bounded-context
+table in `CLAUDE.md`.
+
+### 9.2 No saga participation
+
+User/Auth is not part of Sagas A–E (`order-state-machine.md`) — `UserLoggedIn` triggers
+a best-effort, non-transactional cart merge (SD-02) with no compensating action and no
+saga-join requirement. ADR-0014's saga-join side-table pattern does not apply here.
+
+---
+
+## 10. API Contract Reconciliation (`user-service-api.yaml`)
+
+| Area | `user-service-api.yaml` | This LLD | Reconciliation |
+|---|---|---|---|
+| `UserResponse.status` enum | `[UNVERIFIED, ACTIVE, DEACTIVATED]` | §5 state machine | ✅ Match — no change |
+| `UserResponse.role` enum | `[CUSTOMER, ADMIN, INVENTORY_MANAGER]` | §3.1 | ✅ Match — no change |
+| `POST /auth/register` → `RegisterResponse` | returns `userId` | §3.4 `UserRegistered` payload | ✅ Match |
+| `POST /auth/login` → `TokenResponse` | `accessToken`, `expiresIn`, `tokenType: Bearer` | ADR-0011 access-token TTL (900s) | ✅ Match |
+| Refresh-token transport | Not modelled in OpenAPI schema (cookie-based, per ADR-0011) | §6.2 | ✅ Expected — `HttpOnly` cookies are out of OpenAPI's request/response body model; no fix needed |
+| `POST /admin/users/{userId}/deactivate` (§8.1, UC-UA-09) | **Not present** in `user-service-api.yaml` | §8.1 | ❌ Missing endpoint — flagged as **OQ-LLD-UA-06** |
+
+---
+
+## 11. Consistency Strategy
 
 | Operation | Strategy | Reason |
 |---|---|---|
-| User registration | Synchronous DB write + outbox event | Atomicity: user row + outbox in one transaction |
-| Email verification | Synchronous DB write (mark token used + user status) | Must be atomic; can't verify email and leave user UNVERIFIED |
-| Login | Synchronous reads (user lookup + bcrypt) | Correctness requires current state |
-| Token blacklist | Redis write (sync) | Must take effect before response is returned |
-| Domain events | Async via outbox relay → Kafka | Notification delivery can be eventually consistent |
-
-**Conflict resolution:** Optimistic locking (`version` on `users` table) handles concurrent profile updates. Last-write-wins is not acceptable for status changes — use explicit state machine guards in the aggregate.
-
----
-
-## 8. Security Considerations
-
-- **Password storage:** bcrypt with cost 12. Never log, never return in API response.
-- **Token storage:** Refresh token stored as a random UUID (opaque) — not a JWT — so it cannot be decoded by the client or third parties.
-- **Email enumeration prevention:** `POST /auth/login` returns the same error message whether the email does not exist or the password is wrong.
-- **Token revocation on password change:** Changing password deletes all `refresh_tokens` rows for the user and blacklists the current access token.
-- **JWKS rotation:** Private key rotation procedure: generate new key pair → publish new public key alongside old in JWKS response → sign new tokens with new key → remove old key from JWKS after all old tokens expire (15 min window).
+| Registration | Synchronous DB write (`users` + `user_auth_outbox` row) in one transaction | Atomicity — `UserRegistered` must not be lost if the outbox insert fails |
+| Email verification / password reset | Synchronous DB write (mark token used + update `users.status`/`password_hash`) in one transaction | Token must be single-use; partial application would leave an inconsistent state |
+| Login | Synchronous read (`users` by email) + bcrypt verify | Must reflect current `status`/`password_hash` — no caching of credentials |
+| Profile / address updates | Optimistic lock (`users.version`) | Concurrent `PUT /users/me` from multiple devices — last-writer loses with `409`, not silently overwritten |
+| Domain events | Async via `user_auth_outbox` relay → Kafka (≤ 500 ms poll, container-diagram.md §7) | Notification/Cart consumption can be eventually consistent (NFR-CONS-001) |
+| Session state (refresh tokens, blacklist, rate limits) | Redis, synchronous writes on the request path | Must take effect before the response is returned (e.g., logout must immediately invalidate) |
 
 ---
 
-## 9. Phase 2 Delta (AWS Serverless)
+## 12. Phase 2 Delta (AWS Serverless)
 
 | Concern | Phase 1 | Phase 2 |
 |---|---|---|
-| Identity store | MySQL `users` table | Cognito User Pool |
-| Token issuance | Custom JWT (RS256) | Cognito access token (RS256) |
-| Refresh token | MySQL `refresh_tokens` + Redis | Cognito managed refresh |
-| JWKS endpoint | `GET /auth/.well-known/jwks.json` | Cognito JWKS URL |
-| Rate limiting | Redis counter | Cognito built-in throttling |
-| Outbox relay | Spring `@Scheduled` poller | DynamoDB Streams → Lambda |
-| DB | MySQL `user_db` | DynamoDB single-table (user profile only; auth delegated to Cognito) |
+| Identity store | MySQL `users`/`user_addresses` | Cognito User Pool (credentials) + DynamoDB (profile/addresses) |
+| Token issuance | Custom JWT RS256 (User/Auth-issued) | Cognito-issued JWT RS256 |
+| Refresh token storage | Redis (`refresh:{userId}:{tokenId}`, §6.1) | Cognito-managed refresh token rotation |
+| JWKS endpoint | `GET /auth/.well-known/jwks.json` | Cognito JWKS URL — other services change only their `JWKS_URI` config |
+| Rate limiting | Redis counters (§6.4) | Cognito built-in throttling + API Gateway usage plans |
+| Outbox relay | Spring `@Scheduled` poller on `user_auth_outbox` | DynamoDB Streams → EventBridge (no relay process) |
 
-Migration: Services update `JWKS_URI` env var from Phase 1 URL to Cognito URL. No
-JWT verification code changes required (same RS256 standard).
+The token *format* (JWT RS256) and verification *pattern* (JWKS) are unchanged across
+phases — this is the explicit Phase 1→2 learning artefact per `CLAUDE.md`'s "Phase
+comparison" guidance: only the **issuer** and **storage** change, not the contract that
+downstream services rely on.
 
 ---
 
-## 10. Open Questions
+## 13. Open Questions / Next Artefacts
 
-| ID | Question | Owner | Target |
+| ID | Item | Owner | Status |
 |---|---|---|---|
-| OQ-UA-01 | Should address management be a separate bounded context (e.g., shared with Order)? Or is the Order snapshot approach sufficient? | Architect | LLD sprint |
-| OQ-UA-02 | Multi-device logout: should logout all devices be a single endpoint or per-device? | PM (user story) | Backlog refinement |
-| OQ-UA-03 | Social login (Google / Apple) in scope for Phase 1 or deferred to Phase 2 (Cognito)? | PM | Sprint planning |
+| OQ-LLD-UA-01 | `container-diagram.md` §3 `user_db` row lists "refresh_token tables" — incorrect per §6.1 (Redis-based); remove from the "Owns" column | Architect | Open — small follow-up, bundle with next cross-cutting sync |
+| OQ-LLD-UA-02 | `ADR-0011`'s *Negative consequences* section describes a `refresh_tokens` DB table that does not exist in the implemented design (§6.1) — add an amendment note (do not renumber/delete), same pattern as ADR-0012/OQ-LLD-NT-03 | Architect | Open |
+| OQ-LLD-UA-03 | Add `PasswordResetRequested` to `container-diagram.md` §5 `user-auth.*` topic row "Key events" (§9.1) | Architect | Open — small follow-up PR |
+| OQ-LLD-UA-04 | `component-diagrams.md` §3 missing: `EmailVerificationService`, `PasswordResetService`, `OutboxRelay`/`OutboxRepository` for `user_auth_outbox` (§4) | Architect | Open |
+| OQ-LLD-UA-05 | No reactivation flow for `DEACTIVATED` accounts (§5) — confirm this is intentional (admin data-fix only) or needs a UC | PM | Open |
+| OQ-LLD-UA-06 | `POST /admin/users/{userId}/deactivate` (§8.1, UC-UA-09) missing from `user-service-api.yaml` | Architect | Open — bundle with OQ-LLD-UA-04 |
+
+### Next Artefacts
+
+User/Auth is the first of the three remaining independent-context LLDs (SA-012, this
+document). Per WORKFLOW.md's table order, the next two are:
+
+| Artefact | Description |
+|---|---|
+| **`docs/lld/product-catalog-lld.md`** (SA-013) | Product Catalog — independent of saga choreography; can proceed immediately |
+| **`docs/lld/cart-lld.md`** (SA-014) | Cart — references `UserLoggedIn` (§9.1, this LLD) for guest-cart merge (SD-02); should follow Catalog so its product-snapshot fields can reference the finalised `products` schema |
+| **Cross-cutting HLD sync PR #2** | Bundles OQ-LLD-UA-01/02/03 (small text fixes) — can be combined with any similar small gaps surfaced while writing SA-013/SA-014, following the SA-020 precedent |
