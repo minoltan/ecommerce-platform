@@ -59,8 +59,8 @@ URL:        https://app.clickup.com/31085602/v/f/901814488482
 | List | ID | Phase | Status |
 |------|----|-------|--------|
 | Phase-1-RE | 901818617887 | Requirements Engineering | ✅ Complete |
-| Phase-2-SA | 901818617888 | System Architecture | ⏳ Current |
-| Phase-3-DEV | 901818617889 | Java Implementation | ⬜ |
+| Phase-2-SA | 901818617888 | System Architecture | ✅ Complete |
+| Phase-3-DEV | 901818617889 | Java Implementation | ⏳ Current |
 | Phase-4-QA | 901818617891 | Testing | ⬜ |
 | Phase-5-CICD | 901818617892 | CI/CD & DevOps | ⬜ |
 | Phase-6-AWS | 901818617893 | AWS Serverless | ⬜ |
@@ -169,7 +169,7 @@ hotfix/*      ← emergency fixes
 | `skills/roles/requirements-engineer.md` | Both | RE docs, user stories, AC, OpenAPI stubs | ✅ Done |
 | `skills/roles/project-manager.md` | Both | Sprint plans, ClickUp tasks, Slack updates | ✅ Done |
 | `skills/roles/system-architect.md` | Both | HLD, LLD, C4 diagrams, ADRs | ✅ Done |
-| `skills/roles/backend-developer.md` | Phase 1 | Spring Boot services, tests, Kafka | ⬜ |
+| `skills/roles/backend-developer.md` | Phase 1 | Spring Boot services, tests, Kafka | ✅ Done |
 | `skills/roles/devops-engineer.md` | Both | Dockerfiles, Helm, GitHub Actions, ArgoCD | ⬜ |
 | `skills/roles/aws-architect.md` | Phase 2 | CDK stacks, Lambda, DynamoDB design | ⬜ |
 | `skills/roles/qa-engineer.md` | Both | Test strategy, Pact contracts, k6 scripts | ⬜ |
@@ -280,8 +280,9 @@ hotfix/*      ← emergency fixes
 | Cross-cutting HLD sync (ADR-0013 search-strategy reconciliation: remove Elasticsearch, MySQL FTS + Redis cache; catalog/inventory topic-map gaps; unpublish_reason conditional republish; ADR-0010 amendment for Cart TTL/Hash/itemId; catalog API spec gaps) | `docs/hld/container-diagram.md`, `docs/hld/component-diagrams.md`, `docs/hld/er-diagrams.md`, `docs/hld/sequence-diagrams.md`, `docs/lld/inventory-lld.md`, `docs/lld/product-catalog-lld.md`, `docs/lld/cart-lld.md`, `docs/adr/ADR-0010-cart-storage.md`, `docs/api-specs/catalog-service-api.yaml` | SA-021 | `docs/sa-021-cross-cutting-sync-pc-cart` | ✅ Done |
 | HLD — API Gateway design (versioning strategy, routing table, rate limiting, CORS, internal service discovery) | `docs/hld/api-gateway-design.md` | SA-022 | `docs/sa-022-api-gateway-design` | ✅ Done |
 | HLD — Kubernetes deployment architecture (namespaces, HPA, resource sizing, ingress, secrets, cluster topology, Kustomize layout) | `docs/hld/deployment-architecture.md` | SA-023 | `docs/sa-023-deployment-architecture` | ✅ Done |
+| Phase 2→3 transition (Phase Status table update, `skills/roles/backend-developer.md` role skill, Java 17→21 tech-stack correction per CLAUDE.md) | `WORKFLOW.md`, `skills/roles/backend-developer.md` | SA-024 | `docs/sa-024-phase3-transition` | ✅ Done |
 
-> **Note:** ADR numbers 0003–0005 were not used — ADR-0001/0002 (monetary precision, Kafka topics) and ADR-0006–0013 (8 cross-cutting decisions) cover the SA-007–SA-011 scope. All 7 LLDs (SA-012–SA-018) and four cross-cutting/HLD-supplement rounds (SA-020, SA-021, SA-022, SA-023) are now complete. Kafka topic naming/partitioning (ClickUp task) was resolved by ADR-0002. **Phase 2 (System Architecture) is now complete.** Next up: Phase 1 implementation scaffolding (multi-module Maven project, per-service Dockerfiles, `phase1/k8s/` Kustomize layout per deployment-architecture.md §7, Flyway migrations) per `docs/lld/order-lld.md` and the other LLDs' "Next Artefacts" sections.
+> **Note:** ADR numbers 0003–0005 were not used — ADR-0001/0002 (monetary precision, Kafka topics) and ADR-0006–0013 (8 cross-cutting decisions) cover the SA-007–SA-011 scope. All 7 LLDs (SA-012–SA-018) and five cross-cutting/HLD-supplement/transition rounds (SA-020, SA-021, SA-022, SA-023, SA-024) are now complete. Kafka topic naming/partitioning (ClickUp task) was resolved by ADR-0002. **Phase 2 (System Architecture) is now complete.** **Phase 3 (Java Microservices Implementation) is now current.** Next up: DEV-EPIC-001 (User & Auth Service) scaffolding — multi-module Maven parent under `phase1/`, `user-service` module, Flyway migrations, per `docs/lld/user-auth-lld.md`'s "Next Artefacts" section and `skills/roles/backend-developer.md`.
 
 ---
 
@@ -307,7 +308,7 @@ hotfix/*      ← emergency fixes
 
 #### Tech Stack
 ```
-Language:    Java 17
+Language:    Java 21 (corrected from Java 17 per CLAUDE.md, SA-024)
 Framework:   Spring Boot 3
 Database:    MySQL 8 (per service)
 Cache:       Redis 7
