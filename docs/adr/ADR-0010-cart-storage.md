@@ -136,3 +136,39 @@ Rejected:
 - Redis is already in the stack (rate limiting, token blacklist); no additional infra.
 - Redis TTL semantics map perfectly to cart expiry; DynamoDB TTL has up to 48-hour
   lag on actual deletion.
+
+---
+
+## Amendment (cross-cutting HLD sync PR, SA-021)
+
+`docs/lld/cart-lld.md` (SA-014) refined three details of this ADR's Decision section
+during LLD-level design. The core decision — **Redis as the sole cart store, no MySQL
+table** — is unchanged. Per this project's amend-don't-renumber convention (see
+ADR-0011/ADR-0012 amendment notes), the original Decision/Consequences sections above
+are left as written for historical context; the refinements are:
+
+1. **TTL values** — `cart:user:{userId}` is **7 days** (not 30 days) and
+   `cart:guest:{sessionId}` is **30 minutes** (not 24 hours), both **sliding** (reset on
+   each mutation, not fixed-window). Rationale (cart-lld.md §7.2): a 30-day authenticated
+   TTL retains far more abandoned-cart memory than the 24h/7d split needs, and a 24h
+   guest TTL is generous for a session-scoped cart that drives no SLO — 30 minutes
+   matches typical browsing-session length and bounds guest-cart memory more tightly.
+   `CartAbandoned` (cart-lld.md §3) fires on `cart:user:*` TTL expiry only.
+
+2. **Storage shape** — each cart is a **Redis `HASH`**, not a single JSON blob key.
+   Fields: `meta` (JSON: `couponCode`, `discountAmount`, `currency`, `ownerType`) and one
+   `item:{itemId}` field per line item (JSON). Rationale (cart-lld.md §7): a single-item
+   quantity change (the most frequent mutation) becomes `HSET cart:user:{userId}
+   item:{itemId} {json}` instead of a full-cart `GET` + JSON-decode + mutate + `SET`
+   round trip — avoids the read-modify-write race this ADR's §93 "atomic MULTI/EXEC or
+   Lua script" caveat was written to guard against, for the common case.
+
+3. **New `itemId` field** — each `LineItem` (cart-lld.md §3) gains a server-generated
+   `itemId` (UUID), used as the Hash field suffix above and as the stable identifier for
+   `PATCH /cart/items/{itemId}` / `DELETE /cart/items/{itemId}` operations. Previously
+   line items were addressed by `(variantId)` alone (INV-CT-01 still enforces at most one
+   LineItem per `(productId, variantId)` — `itemId` is an addressing convenience, not a
+   new uniqueness axis).
+
+These refinements resolve OQ-LLD-CT-01, OQ-LLD-CT-02, and OQ-LLD-CT-05 from
+`cart-lld.md` §13.

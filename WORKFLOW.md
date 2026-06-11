@@ -277,8 +277,9 @@ hotfix/*      ← emergency fixes
 | LLD — Notification | `docs/lld/notification-lld.md` | SA-018 | `feature/SA-018-lld-notification` | ✅ Done |
 | ADR-0014: Saga-join state tracking | `docs/adr/ADR-0014-saga-join-state-tracking.md` | SA-019 | `adr/0014-saga-join-state-tracking` | ✅ Done |
 | Cross-cutting HLD sync (PaymentVoided/StockReleased/StockRestored topic-map, SD-06 lock-type fix, retry-schedule reconciliation, RefundIssued→RefundProcessed rename, inventory_outbox) | `docs/hld/container-diagram.md`, `docs/hld/sequence-diagrams.md`, `docs/hld/component-diagrams.md`, `docs/hld/er-diagrams.md`, `docs/hld/order-state-machine.md`, `docs/requirements/use-cases/notification-use-cases.md` | SA-020 | `docs/sa-020-hld-sync-payment-inventory-events` | ✅ Done |
+| Cross-cutting HLD sync (ADR-0013 search-strategy reconciliation: remove Elasticsearch, MySQL FTS + Redis cache; catalog/inventory topic-map gaps; unpublish_reason conditional republish; ADR-0010 amendment for Cart TTL/Hash/itemId; catalog API spec gaps) | `docs/hld/container-diagram.md`, `docs/hld/component-diagrams.md`, `docs/hld/er-diagrams.md`, `docs/hld/sequence-diagrams.md`, `docs/lld/inventory-lld.md`, `docs/lld/product-catalog-lld.md`, `docs/lld/cart-lld.md`, `docs/adr/ADR-0010-cart-storage.md`, `docs/api-specs/catalog-service-api.yaml` | SA-021 | `docs/sa-021-cross-cutting-sync-pc-cart` | ✅ Done |
 
-> **Note:** ADR numbers 0003–0005 were not used — ADR-0001/0002 (monetary precision, Kafka topics) and ADR-0006–0013 (8 cross-cutting decisions) cover the SA-007–SA-011 scope. Next up: LLDs (SA-012 onward), starting with Order (`docs/lld/order-lld.md`) per `container-diagram.md` §13.
+> **Note:** ADR numbers 0003–0005 were not used — ADR-0001/0002 (monetary precision, Kafka topics) and ADR-0006–0013 (8 cross-cutting decisions) cover the SA-007–SA-011 scope. All 7 LLDs (SA-012–SA-018) and two cross-cutting sync rounds (SA-020, SA-021) are now complete. Next up: Phase 1 implementation scaffolding (multi-module Maven project, per-service Dockerfiles/k8s manifests, Flyway migrations) per `docs/lld/order-lld.md` and the other LLDs' "Next Artefacts" sections.
 
 ---
 

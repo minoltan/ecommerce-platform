@@ -457,11 +457,11 @@ simple stateless consumer, not a join.
 
 | ID | Item | Owner | Status |
 |---|---|---|---|
-| OQ-LLD-CT-01 | TTL mismatch: ADR-0010 says 30d (auth)/24h (guest); `container-diagram.md` §6 and `sequence-diagrams.md` SD-05/§15 say 7d/30min. This LLD adopts 7d/30min (§7.2) — ADR-0010 needs an amendment note | Architect | Open |
-| OQ-LLD-CT-02 | Storage shape mismatch: ADR-0010 says single JSON blob (full-replace `SET`/`GET`); `component-diagrams.md` §5 and `container-diagram.md` §6 say Redis Hash. This LLD adopts Hash (§7.1) — ADR-0010 needs an amendment note | Architect | Open |
-| OQ-LLD-CT-03 | `container-diagram.md` line 242's "Redis down → falls back to DB read for cart" contradicts ADR-0010 ("no MySQL table, Redis is sole store"). Correct the failure-mode table to "503, no fallback path" (§7.4) | Architect | Open |
+| OQ-LLD-CT-01 | TTL mismatch: ADR-0010 says 30d (auth)/24h (guest); `container-diagram.md` §6 and `sequence-diagrams.md` SD-05/§15 say 7d/30min. This LLD adopts 7d/30min (§7.2) — ADR-0010 needs an amendment note | Architect | **Resolved** — ADR-0010 amendment, cross-cutting HLD sync PR (SA-021) |
+| OQ-LLD-CT-02 | Storage shape mismatch: ADR-0010 says single JSON blob (full-replace `SET`/`GET`); `component-diagrams.md` §5 and `container-diagram.md` §6 say Redis Hash. This LLD adopts Hash (§7.1) — ADR-0010 needs an amendment note | Architect | **Resolved** — ADR-0010 amendment, cross-cutting HLD sync PR (SA-021) |
+| OQ-LLD-CT-03 | `container-diagram.md` line 242's "Redis down → falls back to DB read for cart" contradicts ADR-0010 ("no MySQL table, Redis is sole store"). Correct the failure-mode table to "503, no fallback path" (§7.4) | Architect | **Resolved** — cross-cutting HLD sync PR (SA-021) |
 | OQ-LLD-CT-04 | **Resolved in this LLD** — checkout stock-validation strategy (OQ-C3-01/OQ-SD-02): adopted Option C, sync read-only availability pre-check + async reservation + Saga C backstop (§6) | Architect | **Resolved** |
-| OQ-LLD-CT-05 | New `itemId` (UUID) per `LineItem`, not present in ADR-0010's data shape but required by `cart-service-api.yaml`'s `{itemId}` path param. ADR-0010 amendment should include this | Architect | Open |
+| OQ-LLD-CT-05 | New `itemId` (UUID) per `LineItem`, not present in ADR-0010's data shape but required by `cart-service-api.yaml`'s `{itemId}` path param. ADR-0010 amendment should include this | Architect | **Resolved** — ADR-0010 amendment, cross-cutting HLD sync PR (SA-021) |
 | OQ-LLD-CT-06 | Coupon validation: `cart-use-cases.md` references an external "Coupon / Promo Service" not in `CLAUDE.md`'s 7 bounded contexts. This LLD treats it as in-process static rules (§1, §4) — confirm scope before implementation | Architect | Open |
 | OQ-LLD-CT-07 | `CartSummary.tax` field has no defined calculation logic anywhere — needs a tax-rule artefact or explicit "0 for Phase 1" decision | Architect | Open |
 | OQ-LLD-CT-08 | `CartAbandoned` should only fire for `cart:user:{*}` (addressable, has email/preferences), not `cart:guest:{*}` — `cart-use-cases.md` UC-CT-10 / `notification-use-cases.md` UC-NT-05 don't make this explicit (§3) | Architect | Open |

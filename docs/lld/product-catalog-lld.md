@@ -518,14 +518,14 @@ no `catalog_outbox` is required (consistent with §4).
 
 | ID | Item | Owner | Status |
 |---|---|---|---|
-| OQ-LLD-PC-01 | `component-diagrams.md` §4 (`SearchIndexAdapter`/`ES`) and `sequence-diagrams.md` SD-04/SD-10/SD-12 describe Elasticsearch; ADR-0013 (Accepted) mandates MySQL FTS for Phase 1. Adopted ADR-0013 in this LLD (§6, §8) — diagrams need updating in a cross-cutting sync PR | Architect | Open |
-| OQ-LLD-PC-02 | SD-04's Redis cache TTL is 60s; ADR-0013 specifies 5 min. Align SD-04 to ADR-0013 in the same sync PR | Architect | Open |
-| OQ-LLD-PC-03 | `er-diagrams.md` §3: fix `ft_products_search` to `(title, description)` (not `title` only) and fix stale "ADR-010" reference → "ADR-0013"; same fix for `container-diagram.md` line 244 | Architect | Open |
-| OQ-LLD-PC-04 | Add `ProductPublished`/`ProductUnpublished` (and consider `ProductCreated`) to `container-diagram.md` §5 `catalog.*` topic row (§9.1) | Architect | Open |
-| OQ-LLD-PC-05 | `StockReplenished`/`inventory.stock.replenished` (used in SD-12) does not appear in `container-diagram.md` §5's `inventory.*` list or `inventory-lld.md`'s published-event catalogue — naming/existence gap to resolve against Inventory's event catalogue (§9.2) | Architect | Open |
-| OQ-LLD-PC-06 | `catalog-service-api.yaml` `ProductSummary.status` enum uses `DELETED`; aggregate/schema use `ARCHIVED` — align naming (§10) | Architect | Open |
-| OQ-LLD-PC-07 | `catalog-service-api.yaml` missing variant management endpoints (UC-PC-07) and category update/delete/move endpoints (UC-PC-10) (§10) | Architect | Open |
-| OQ-LLD-PC-08 | New `unpublish_reason` column (§5, §7) needs reflecting in `sequence-diagrams.md` SD-12's conditional-republish logic | Architect | Open |
+| OQ-LLD-PC-01 | `component-diagrams.md` §4 (`SearchIndexAdapter`/`ES`) and `sequence-diagrams.md` SD-04/SD-10/SD-12 describe Elasticsearch; ADR-0013 (Accepted) mandates MySQL FTS for Phase 1. Adopted ADR-0013 in this LLD (§6, §8) — diagrams need updating in a cross-cutting sync PR | Architect | **Resolved** — cross-cutting HLD sync PR (SA-021) |
+| OQ-LLD-PC-02 | SD-04's Redis cache TTL is 60s; ADR-0013 specifies 5 min. Align SD-04 to ADR-0013 in the same sync PR | Architect | **Resolved** — cross-cutting HLD sync PR (SA-021) |
+| OQ-LLD-PC-03 | `er-diagrams.md` §3: fix `ft_products_search` to `(title, description)` (not `title` only) and fix stale "ADR-010" reference → "ADR-0013"; same fix for `container-diagram.md` line 244 | Architect | **Resolved** — cross-cutting HLD sync PR (SA-021) |
+| OQ-LLD-PC-04 | Add `ProductPublished`/`ProductUnpublished` (and consider `ProductCreated`) to `container-diagram.md` §5 `catalog.*` topic row (§9.1) | Architect | **Resolved** — cross-cutting HLD sync PR (SA-021) |
+| OQ-LLD-PC-05 | `StockReplenished`/`inventory.stock.replenished` (used in SD-12) does not appear in `container-diagram.md` §5's `inventory.*` list or `inventory-lld.md`'s published-event catalogue — naming/existence gap to resolve against Inventory's event catalogue (§9.2) | Architect | **Resolved** — cross-cutting HLD sync PR (SA-021) |
+| OQ-LLD-PC-06 | `catalog-service-api.yaml` `ProductSummary.status` enum uses `DELETED`; aggregate/schema use `ARCHIVED` — align naming (§10) | Architect | **Resolved** — cross-cutting HLD sync PR (SA-021) |
+| OQ-LLD-PC-07 | `catalog-service-api.yaml` missing variant management endpoints (UC-PC-07) and category update/delete/move endpoints (UC-PC-10) (§10) | Architect | **Resolved** — cross-cutting HLD sync PR (SA-021) |
+| OQ-LLD-PC-08 | New `unpublish_reason` column (§5, §7) needs reflecting in `sequence-diagrams.md` SD-12's conditional-republish logic | Architect | **Resolved** — cross-cutting HLD sync PR (SA-021) |
 | OQ-LLD-PC-09 | INV-PC-02 ("no publish without a primary image") is a UX requirement not yet codified in any HLD use-case or invariant doc — confirm with product requirements before enforcing as a hard `publish()` guard | Architect | Open |
 
 | Next Artefact | Description |
