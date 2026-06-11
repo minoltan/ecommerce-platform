@@ -153,8 +153,9 @@ hotfix/*      ← emergency fixes
 
 | File | Purpose | Status |
 |------|---------|--------|
-| `skills/techniques/agile-docs.md` | User story, AC, NFR, ADR formats | ⬜ Not created |
-| `skills/techniques/system-design.md` | HLD, LLD, C4, draw.io standards | ⬜ |
+| `skills/techniques/agile-docs.md` | User story, AC, NFR, ADR formats | ✅ Done |
+| `skills/techniques/system-design.md` | HLD, LLD, C4, draw.io standards | ✅ Done |
+| `skills/techniques/design-patterns.md` | Architectural pattern catalogue with rationale | ✅ Done |
 | `skills/techniques/java-springboot.md` | Project structure, patterns, conventions | ⬜ |
 | `skills/techniques/docker-k8s.md` | Dockerfile, Helm, K8s manifest patterns | ⬜ |
 | `skills/techniques/aws-serverless.md` | CDK, Lambda, DynamoDB, Step Functions | ⬜ |
@@ -251,24 +252,33 @@ hotfix/*      ← emergency fixes
 
 | Artifact | Path | ClickUp Task | Branch | Status |
 |----------|------|--------------|--------|--------|
-| C4 Level 1 — System context | `docs/hld/system-context.md` | SA-001 | `feature/SA-001-system-context-diagram` | ✅ PR open |
-| C4 Level 2 — Container diagram | `docs/hld/container-diagram.md` | SA-002 | `feature/SA-002-container-diagram` | ✅ PR open |
-| C4 Level 3 — Component diagrams | `docs/lld/[context]-lld.md` §Component | SA-003 | `feature/SA-003-*` | ⬜ |
-| Sequence diagrams | `docs/lld/[context]-lld.md` §Sequences | SA-004 | `feature/SA-004-*` | ⬜ |
-| ER diagrams | `docs/lld/[context]-lld.md` §DB Schema | SA-005 | `feature/SA-005-*` | ⬜ |
-| Order state machine | `docs/lld/order-lld.md` §State Machine | SA-006 | `feature/SA-006-*` | ⬜ |
-| ADR-001: Monetary precision (integer paise) | `docs/adr/ADR-001-monetary-precision.md` | SA-007 | `feature/SA-007-adr-001` | ⬜ |
-| ADR-002: Stock reservation strategy | `docs/adr/ADR-002-stock-reservation.md` | SA-008 | `feature/SA-008-adr-002` | ⬜ |
-| ADR-003: Saga pattern (choreography vs orchestration) | `docs/adr/ADR-003-saga-pattern.md` | SA-009 | `feature/SA-009-adr-003` | ⬜ |
-| ADR-004: Payment idempotency | `docs/adr/ADR-004-payment-idempotency.md` | SA-010 | `feature/SA-010-adr-004` | ⬜ |
-| ADR-005: Cart storage (Redis vs DB) | `docs/adr/ADR-005-cart-storage.md` | SA-011 | `feature/SA-011-adr-005` | ⬜ |
+| C4 Level 1 — System context | `docs/hld/system-context.md` | SA-001 | `feature/SA-001-system-context-diagram` | ✅ Done |
+| C4 Level 2 — Container diagram | `docs/hld/container-diagram.md` | SA-002 | `feature/SA-002-container-diagram` | ✅ Done |
+| C4 Level 3 — Component diagrams | `docs/hld/component-diagrams.md` | SA-003 | merged (#11) | ✅ Done |
+| Sequence diagrams | `docs/hld/sequence-diagrams.md` | SA-004 | merged (#12) | ✅ Done |
+| ER diagrams | `docs/hld/er-diagrams.md` | SA-005 | merged (#13) | ✅ Done |
+| Order state machine | `docs/hld/order-state-machine.md` | SA-006 | merged (#14) | ✅ Done |
+| ADR-0001: Monetary precision (integer minor units) | `docs/adr/ADR-0001-monetary-precision.md` | SA-007 | `adr/0001-0002-monetary-and-kafka-topics` | ✅ Done |
+| ADR-0002: Kafka topic design and partitioning | `docs/adr/ADR-0002-kafka-topic-partitioning.md` | SA-008 | `adr/0001-0002-monetary-and-kafka-topics` | ✅ Done |
+| ADR-0006: Microservices over monolith | `docs/adr/ADR-0006-microservices-vs-monolith.md` | SA-009 | merged (#15/#16) | ✅ Done |
+| ADR-0007: Kafka over RabbitMQ | `docs/adr/ADR-0007-kafka-vs-rabbitmq.md` | SA-009 | merged (#15/#16) | ✅ Done |
+| ADR-0008: Database-per-service | `docs/adr/ADR-0008-database-per-service.md` | SA-009 | merged (#15/#16) | ✅ Done |
+| ADR-0009: Payment idempotency | `docs/adr/ADR-0009-payment-idempotency.md` | SA-010 | merged (#15/#16) | ✅ Done |
+| ADR-0010: Cart storage (Redis vs DB) | `docs/adr/ADR-0010-cart-storage.md` | SA-011 | merged (#15/#16) | ✅ Done |
+| ADR-0011: JWT strategy | `docs/adr/ADR-0011-jwt-strategy.md` | SA-011 | merged (#15/#16) | ✅ Done |
+| ADR-0012: Notification delivery guarantee | `docs/adr/ADR-0012-notification-delivery-guarantee.md` | SA-011 | merged (#15/#16) | ✅ Done |
+| ADR-0013: Catalog search strategy | `docs/adr/ADR-0013-catalog-search-strategy.md` | SA-011 | merged (#15/#16) | ✅ Done |
 | LLD — User/Auth | `docs/lld/user-auth-lld.md` | SA-012 | `feature/SA-012-lld-user-auth` | ⬜ |
 | LLD — Product Catalog | `docs/lld/product-catalog-lld.md` | SA-013 | `feature/SA-013-lld-catalog` | ⬜ |
 | LLD — Cart | `docs/lld/cart-lld.md` | SA-014 | `feature/SA-014-lld-cart` | ⬜ |
-| LLD — Order | `docs/lld/order-lld.md` | SA-015 | `feature/SA-015-lld-order` | ⬜ |
-| LLD — Payment | `docs/lld/payment-lld.md` | SA-016 | `feature/SA-016-lld-payment` | ⬜ |
-| LLD — Inventory | `docs/lld/inventory-lld.md` | SA-017 | `feature/SA-017-lld-inventory` | ⬜ |
-| LLD — Notification | `docs/lld/notification-lld.md` | SA-018 | `feature/SA-018-lld-notification` | ⬜ |
+| LLD — Order | `docs/lld/order-lld.md` | SA-015 | `feature/SA-015-lld-order` | ✅ Done |
+| LLD — Payment | `docs/lld/payment-lld.md` | SA-016 | `feature/SA-016-lld-payment` | ✅ Done |
+| LLD — Inventory | `docs/lld/inventory-lld.md` | SA-017 | `feature/SA-017-lld-inventory` | ✅ Done |
+| LLD — Notification | `docs/lld/notification-lld.md` | SA-018 | `feature/SA-018-lld-notification` | ✅ Done |
+| ADR-0014: Saga-join state tracking | `docs/adr/ADR-0014-saga-join-state-tracking.md` | SA-019 | `adr/0014-saga-join-state-tracking` | ✅ Done |
+| Cross-cutting HLD sync (PaymentVoided/StockReleased/StockRestored topic-map, SD-06 lock-type fix, retry-schedule reconciliation, RefundIssued→RefundProcessed rename, inventory_outbox) | `docs/hld/container-diagram.md`, `docs/hld/sequence-diagrams.md`, `docs/hld/component-diagrams.md`, `docs/hld/er-diagrams.md`, `docs/hld/order-state-machine.md`, `docs/requirements/use-cases/notification-use-cases.md` | SA-020 | `docs/sa-020-hld-sync-payment-inventory-events` | ✅ Done |
+
+> **Note:** ADR numbers 0003–0005 were not used — ADR-0001/0002 (monetary precision, Kafka topics) and ADR-0006–0013 (8 cross-cutting decisions) cover the SA-007–SA-011 scope. Next up: LLDs (SA-012 onward), starting with Order (`docs/lld/order-lld.md`) per `container-diagram.md` §13.
 
 ---
 
@@ -435,8 +445,9 @@ ecommerce-platform/
 │   │   ├── aws-architect.md          ⬜
 │   │   └── qa-engineer.md            ⬜
 │   └── techniques/
-│       ├── agile-docs.md             ⬜ (not yet created)
-│       ├── system-design.md          ⬜
+│       ├── agile-docs.md             ✅
+│       ├── system-design.md          ✅
+│       ├── design-patterns.md        ✅
 │       ├── java-springboot.md        ⬜
 │       ├── docker-k8s.md             ⬜
 │       ├── aws-serverless.md         ⬜
@@ -446,9 +457,9 @@ ecommerce-platform/
 │   ├── requirements/                 ✅ Complete (event-storming, FRs, NFRs, user-stories, AC, 7 use-cases)
 │   ├── api-specs/                    ✅ Complete (7 OpenAPI stubs)
 │   ├── project-management/           ✅ Complete (clickup-board-structure.md)
-│   ├── hld/                          ⏳ In progress (SA-001, SA-002 — PRs open, not yet merged)
-│   ├── lld/                          ⬜
-│   └── adr/                          ⬜
+│   ├── hld/                          ✅ Complete (system-context, container, component, sequence, ER, order-state-machine)
+│   ├── lld/                          ⬜ (next: order-lld.md)
+│   └── adr/                          ✅ ADR-0001, 0002, 0006–0013 (10 ADRs)
 ├── phase1/
 │   ├── user-service/                 ⬜
 │   ├── catalog-service/              ⬜
@@ -525,7 +536,7 @@ checklist in CLAUDE.md to keep Claude Code context current.
 | Non-functional requirement | NFR-[CONTEXT]-001 | NFR-ORDER-001 |
 | User story | US-[CONTEXT]-001 | US-ORDER-001 |
 | Acceptance criteria | AC-[US-ID]-001 | AC-US-ORDER-001-001 |
-| Architecture decision | ADR-001 | ADR-001 |
+| Architecture decision | ADR-NNNN (4-digit) | ADR-0001 |
 | Domain event | PascalCase past tense | OrderPlaced |
 | ClickUp task | [ROLE]-[number] | SA-001 |
 

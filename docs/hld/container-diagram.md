@@ -50,7 +50,7 @@ It does **not** show internal class structure of any service — that is the res
 | **catalog_db** | MySQL 8 | Product, category, product_image, product_attribute tables | :3306 (internal) |
 | **order_db** | MySQL 8 | Order, order_line, return, order_outbox tables | :3306 (internal) |
 | **payment_db** | MySQL 8 | Payment, refund, idempotency_key, payment_outbox tables | :3306 (internal) |
-| **inventory_db** | MySQL 8 | Inventory_item, stock_reservation, stock_movement tables | :3306 (internal) |
+| **inventory_db** | MySQL 8 | Inventory_item, stock_reservation, stock_movement, inventory_outbox tables | :3306 (internal) |
 | **notification_db** | MySQL 8 | Notification, notification_preference, notification_template tables | :3306 (internal) |
 | **Search Index** | Elasticsearch / OpenSearch | Product search documents | HTTPS :9200 (internal) |
 | **Object Storage** | AWS S3 | Product images (binary) | HTTPS (S3 API) |
@@ -166,8 +166,8 @@ graph TB
 | `catalog.*` | Product Catalog Service | `ProductPriceUpdated`, `ProductVariantAdded`, `ProductVariantRemoved` | Cart, Inventory |
 | `cart.*` | Cart Service | `CartCheckedOut`, `CartAbandoned` | Order, Notification |
 | `order.*` | Order Service | `OrderPlaced`, `OrderConfirmed`, `OrderFailed`, `OrderCancelled`, `OrderShipped`, `OrderDelivered`, `ReturnApproved` | Payment, Inventory, Notification, Cart |
-| `payment.*` | Payment Service | `PaymentAuthorised`, `PaymentFailed`, `PaymentExpired`, `RefundProcessed`, `RefundFailed` | Order, Cart, Notification |
-| `inventory.*` | Inventory Service | `StockReservationFailed`, `StockReserved`, `ProductOutOfStock`, `LowStockAlertTriggered` | Order, Product Catalog, Notification |
+| `payment.*` | Payment Service | `PaymentAuthorised`, `PaymentFailed`, `PaymentExpired`, `PaymentVoided`, `RefundProcessed`, `RefundFailed` | Order, Cart, Notification |
+| `inventory.*` | Inventory Service | `StockReservationFailed`, `StockReserved`, `StockReleased`, `StockRestored`, `ProductOutOfStock`, `LowStockAlertTriggered` | Order, Product Catalog, Notification |
 
 **Topic naming convention:** `{context}.{entity}.{event}` — e.g., `order.order.placed`, `payment.payment.authorised`.  
 **Partitioning key:** `orderId` for order/payment/inventory topics; `userId` for user-auth and cart topics.  
