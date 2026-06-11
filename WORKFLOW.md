@@ -270,7 +270,7 @@ hotfix/*      ← emergency fixes
 | ADR-0013: Catalog search strategy | `docs/adr/ADR-0013-catalog-search-strategy.md` | SA-011 | merged (#15/#16) | ✅ Done |
 | LLD — User/Auth | `docs/lld/user-auth-lld.md` | SA-012 | `feature/SA-012-lld-user-auth` | ✅ Done |
 | LLD — Product Catalog | `docs/lld/product-catalog-lld.md` | SA-013 | `feature/SA-013-lld-catalog` | ✅ Done |
-| LLD — Cart | `docs/lld/cart-lld.md` | SA-014 | `feature/SA-014-lld-cart` | ⬜ |
+| LLD — Cart | `docs/lld/cart-lld.md` | SA-014 | `feature/SA-014-lld-cart` | ✅ Done |
 | LLD — Order | `docs/lld/order-lld.md` | SA-015 | `feature/SA-015-lld-order` | ✅ Done |
 | LLD — Payment | `docs/lld/payment-lld.md` | SA-016 | `feature/SA-016-lld-payment` | ✅ Done |
 | LLD — Inventory | `docs/lld/inventory-lld.md` | SA-017 | `feature/SA-017-lld-inventory` | ✅ Done |
