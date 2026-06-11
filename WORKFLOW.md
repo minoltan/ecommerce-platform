@@ -274,7 +274,7 @@ hotfix/*      ← emergency fixes
 | LLD — Order | `docs/lld/order-lld.md` | SA-015 | `feature/SA-015-lld-order` | ✅ Done |
 | LLD — Payment | `docs/lld/payment-lld.md` | SA-016 | `feature/SA-016-lld-payment` | ✅ Done |
 | LLD — Inventory | `docs/lld/inventory-lld.md` | SA-017 | `feature/SA-017-lld-inventory` | ✅ Done |
-| LLD — Notification | `docs/lld/notification-lld.md` | SA-018 | `feature/SA-018-lld-notification` | ⬜ |
+| LLD — Notification | `docs/lld/notification-lld.md` | SA-018 | `feature/SA-018-lld-notification` | ✅ Done |
 
 > **Note:** ADR numbers 0003–0005 were not used — ADR-0001/0002 (monetary precision, Kafka topics) and ADR-0006–0013 (8 cross-cutting decisions) cover the SA-007–SA-011 scope. Next up: LLDs (SA-012 onward), starting with Order (`docs/lld/order-lld.md`) per `container-diagram.md` §13.
 
