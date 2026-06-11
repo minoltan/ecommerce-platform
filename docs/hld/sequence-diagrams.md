@@ -274,7 +274,7 @@ sequenceDiagram
 
     par Stock reservation
         Kafka-->>IS: CONSUME OrderPlaced
-        IS->>IDB: BEGIN TX — SELECT InventoryItem FOR UPDATE (optimistic lock)
+        IS->>IDB: BEGIN TX — SELECT InventoryItem FOR UPDATE (pessimistic lock)
         IS->>IS: availableQty >= requested qty?
         IDB-->>IS: yes — UPDATE reservedQty, INSERT StockReservation (TTL 15 min)
         IS->>IDB: COMMIT
@@ -512,26 +512,26 @@ sequenceDiagram
     participant Email as Email Provider
     participant DLQ as Dead Letter Queue
 
-    Note over NS: Initial dispatch attempt
+    Note over NS: Initial dispatch attempt (attempt 1, immediate)
     NS->>Email: POST /send {to, subject, body, correlationId}
     Email-->>NS: HTTP 503 Service Unavailable
 
-    NS->>NDB: UPDATE notification SET retryCount=1, nextRetryAt=now()+1min, status=PENDING
+    NS->>NDB: UPDATE notification SET retryCount=1, nextRetryAt=now()+30s, status=PENDING
 
-    Note over NS: RetryScheduler fires after 1 min
-    NS->>Email: POST /send (retry 1)
+    Note over NS: RetryScheduler fires after 30 seconds
+    NS->>Email: POST /send (retry 2)
     Email-->>NS: HTTP 503
 
     NS->>NDB: UPDATE notification SET retryCount=2, nextRetryAt=now()+5min
 
     Note over NS: RetryScheduler fires after 5 min
-    NS->>Email: POST /send (retry 2)
+    NS->>Email: POST /send (retry 3)
     Email-->>NS: HTTP 503
 
-    NS->>NDB: UPDATE notification SET retryCount=3, nextRetryAt=now()+15min
+    NS->>NDB: UPDATE notification SET retryCount=3, nextRetryAt=now()+30min
 
-    Note over NS: RetryScheduler fires after 15 min
-    NS->>Email: POST /send (retry 3 — final)
+    Note over NS: RetryScheduler fires after 30 min
+    NS->>Email: POST /send (retry 4 — final)
     Email-->>NS: HTTP 503
 
     NS->>NDB: UPDATE notification SET status=DLQ, abandondedAt=now()

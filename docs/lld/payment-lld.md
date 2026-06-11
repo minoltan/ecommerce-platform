@@ -475,7 +475,7 @@ this LLD's diff).
 
 | ID | Item | Owner | Status |
 |---|---|---|---|
-| OQ-LLD-PM-01 | Add `PaymentVoided` to `container-diagram.md` §5 Kafka Topic Map (`payment.*` row) | Architect | Open — small follow-up PR |
+| OQ-LLD-PM-01 | Add `PaymentVoided` to `container-diagram.md` §5 Kafka Topic Map (`payment.*` row) | Architect | **Resolved** — cross-cutting HLD sync PR (SA-020) |
 | OQ-LLD-PM-02 | Update `payment-use-cases.md` state diagram to show split Payment/Refund machines (§5) | Architect | Open |
 | OQ-LLD-PM-03 | Fix `payment-service-api.yaml` per §10 (money fields, status enum split, webhook eventType) | Architect | Open — bundle with `order-service-api.yaml` fix from order-lld.md §14 |
 | OQ-LLD-PM-04 | `docs/adr/ADR-0014-saga-join-state-tracking.md` (flagged in order-lld.md §14, not yet written) — once written, this LLD's §9 should cross-reference it | Architect | Open |

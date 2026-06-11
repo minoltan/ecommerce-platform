@@ -328,15 +328,15 @@ graph TB
 
 **Bounded context:** Inventory  
 **Aggregates:** `InventoryItem`, `StockReservation`  
-**DB:** `inventory_db` (MySQL)  
-**Pattern:** Optimistic locking on every stock mutation; scheduled job for reservation TTL expiry
+**DB:** `inventory_db` (MySQL) including `inventory_outbox` table (ADR-0014, scoped to saga-critical events)  
+**Pattern:** Pessimistic locking (`FOR UPDATE`) for saga-triggered stock mutations, optimistic locking (`version`) for admin operations; scheduled job for reservation TTL expiry; transactional outbox for `StockReserved`/`StockReservationFailed`/`StockReleased`/`StockRestored`
 
 ```mermaid
 graph TB
     subgraph external ["External"]
         GW["API Gateway"]
         Kafka["Kafka"]
-        DB[("inventory_db\nMySQL")]
+        DB[("inventory_db\nMySQL\n+ inventory_outbox")]
     end
 
     subgraph is ["Inventory Service"]
@@ -345,8 +345,9 @@ graph TB
         end
 
         subgraph application ["application/"]
-            InvS["InventoryService\ncreateItem · reserveStock\ncommitStock · releaseReservation\nreplenishStock · adjustInventory\nsetReorderLevel · markOutOfStock\ntriggerLowStockAlert"]
+            InvS["InventoryService\ncreateItem · reserveStock\ncommitStock · releaseReservation\nrestoreStock · replenishStock · adjustInventory\nsetReorderLevel · markOutOfStock\ntriggerLowStockAlert"]
             ExpJ["ReservationExpiryJob\n@Scheduled every 30s\nexpires reservations past TTL\npublishes StockReleased"]
+            OR["OutboxRelay\n500ms poll → Kafka publish\nat-least-once guarantee\n(StockReserved, StockReservationFailed,\nStockReleased, StockRestored only)"]
         end
 
         subgraph domain ["domain/"]
@@ -355,10 +356,11 @@ graph TB
         end
 
         subgraph infra ["infrastructure/"]
-            IRepo["InventoryRepository\nJPA — inventory_db\noptimistic lock on version field"]
+            IRepo["InventoryRepository\nJPA — inventory_db\npessimistic FOR UPDATE for saga ops,\noptimistic lock on version for admin ops"]
             SRRepo["ReservationRepository\nJPA — inventory_db"]
-            KP["KafkaEventPublisher\nStockReserved\nStockReservationFailed\nStockReleased\nProductOutOfStock\nLowStockAlertTriggered"]
-            KC["KafkaEventConsumer\nOrderPlaced ← Order\nOrderConfirmed ← Order\nOrderCancelled ← Order\nProductVariantAdded ← Catalog\nProductVariantRemoved ← Catalog"]
+            OutR["OutboxRepository\nJPA — inventory_outbox"]
+            KP["KafkaEventPublisher\nProductOutOfStock\nLowStockAlertTriggered\n(direct publish — non-saga events)"]
+            KC["KafkaEventConsumer\nOrderPlaced ← Order\nOrderConfirmed ← Order\nOrderCancelled ← Order\nReturnApproved ← Order\nProductVariantAdded ← Catalog\nProductVariantRemoved ← Catalog"]
         end
     end
 
@@ -366,11 +368,13 @@ graph TB
     IC --> InvS
     ExpJ --> InvS
     InvS --> II & SR
-    InvS --> IRepo & SRRepo & KP
+    InvS --> IRepo & SRRepo & OutR & KP
+    OR -->|"reads outbox\npublishes events"| OutR
+    OR -->|"inventory.*\n(StockReserved, StockReservationFailed,\nStockReleased, StockRestored)"| Kafka
     KC -->|"order.*\ncatalog.*"| InvS
     KC --> Kafka
     KP -->|"inventory.*"| Kafka
-    IRepo & SRRepo --> DB
+    IRepo & SRRepo & OutR --> DB
 ```
 
 ---
@@ -401,7 +405,7 @@ graph TB
 
         subgraph application ["application/"]
             NS["NotificationService\ndispatch · retry · routeToDLQ\ncheckPreference · logDelivery"]
-            RS["RetryScheduler\nExponential back-off:\n1min → 5min → 15min\nMax 3 retries → DLQ"]
+            RS["RetryScheduler\nBack-off schedule (ADR-0012):\nimmediate → +30s → +5min → +30min\nMax 4 attempts → DLQ"]
         end
 
         subgraph domain ["domain/"]

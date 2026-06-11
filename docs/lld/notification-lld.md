@@ -360,8 +360,8 @@ with the same idempotency key — admin API should accept a client-supplied
 | ID | Item | Owner | Status |
 |---|---|---|---|
 | OQ-ER-03 | `source_event_id` scheme for admin manual sends | Architect | **Resolved in this LLD** — `admin-{adminUserId}-{ULID}` (§9) |
-| OQ-LLD-NT-01 | Reconcile retry schedule across `component-diagrams.md` §9, `sequence-diagrams.md` SD-11, `notification-use-cases.md` to match ADR-0012's 4-attempt (immediate/+30s/+5min/+30min) schedule | Architect | Open — single PR, 3 text edits (§6.2) |
-| OQ-LLD-NT-02 | `payment.refund.processed` vs `RefundIssued` naming — rename `order-state-machine.md` T-19/Saga-E references and `notification-use-cases.md` UC-NT-04 to match `payment-lld.md`'s `RefundProcessed` | Architect | Open |
+| OQ-LLD-NT-01 | Reconcile retry schedule across `component-diagrams.md` §9, `sequence-diagrams.md` SD-11, `notification-use-cases.md` to match ADR-0012's 4-attempt (immediate/+30s/+5min/+30min) schedule | Architect | **Resolved** — cross-cutting HLD sync PR (SA-020) |
+| OQ-LLD-NT-02 | `payment.refund.processed` vs `RefundIssued` naming — rename `order-state-machine.md` T-19/Saga-E references and `notification-use-cases.md` UC-NT-04 to match `payment-lld.md`'s `RefundProcessed` | Architect | **Resolved** — cross-cutting HLD sync PR (SA-020) |
 | OQ-LLD-NT-03 | ADR-0012 amendment note: DLQ is DB-status-based (`status='DLQ'` + Micrometer gauge), not a `notification.dlq` Kafka topic — add an amendment to ADR-0012 (do not renumber/delete) | Architect | Open |
 | OQ-LLD-NT-04 | Add UC-NT-12 through UC-NT-16 to `notification-use-cases.md` for `OrderFailed`, `OrderCancelled`, `OrderDelivered`, `ReturnApproved`, `ReturnCompleted` (§5 gaps) | Architect | Open |
 | OQ-LLD-NT-05 | `docs/api-specs/notification-service-api.yaml` does not exist — needs creation for `GET /notifications/history`, `PUT /notifications/preferences`, `POST /notifications/send`, `POST /notifications/{id}/resend` | Architect | Open |

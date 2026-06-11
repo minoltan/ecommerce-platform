@@ -276,6 +276,7 @@ hotfix/*      ← emergency fixes
 | LLD — Inventory | `docs/lld/inventory-lld.md` | SA-017 | `feature/SA-017-lld-inventory` | ✅ Done |
 | LLD — Notification | `docs/lld/notification-lld.md` | SA-018 | `feature/SA-018-lld-notification` | ✅ Done |
 | ADR-0014: Saga-join state tracking | `docs/adr/ADR-0014-saga-join-state-tracking.md` | SA-019 | `adr/0014-saga-join-state-tracking` | ✅ Done |
+| Cross-cutting HLD sync (PaymentVoided/StockReleased/StockRestored topic-map, SD-06 lock-type fix, retry-schedule reconciliation, RefundIssued→RefundProcessed rename, inventory_outbox) | `docs/hld/container-diagram.md`, `docs/hld/sequence-diagrams.md`, `docs/hld/component-diagrams.md`, `docs/hld/er-diagrams.md`, `docs/hld/order-state-machine.md`, `docs/requirements/use-cases/notification-use-cases.md` | SA-020 | `docs/sa-020-hld-sync-payment-inventory-events` | ✅ Done |
 
 > **Note:** ADR numbers 0003–0005 were not used — ADR-0001/0002 (monetary precision, Kafka topics) and ADR-0006–0013 (8 cross-cutting decisions) cover the SA-007–SA-011 scope. Next up: LLDs (SA-012 onward), starting with Order (`docs/lld/order-lld.md`) per `container-diagram.md` §13.
 
