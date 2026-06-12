@@ -56,4 +56,38 @@ public class OutboxEvent {
         this.correlationId = correlationId;
         this.published = false;
     }
+
+    public Long getId() {
+        return id;
+    }
+
+    public UUID getAggregateId() {
+        return aggregateId;
+    }
+
+    public String getEventType() {
+        return eventType;
+    }
+
+    public String getPayload() {
+        return payload;
+    }
+
+    public UUID getCorrelationId() {
+        return correlationId;
+    }
+
+    public boolean isPublished() {
+        return published;
+    }
+
+    public Instant getPublishedAt() {
+        return publishedAt;
+    }
+
+    /** Marks this event as published by the {@link com.ecommerce.userauth.outbox.OutboxRelay}. */
+    public void markPublished(Instant now) {
+        this.published = true;
+        this.publishedAt = now;
+    }
 }

@@ -1,5 +1,6 @@
 package com.ecommerce.userauth.service;
 
+import com.ecommerce.userauth.config.CorrelationIdFilter;
 import com.ecommerce.userauth.domain.Email;
 import com.ecommerce.userauth.domain.EmailAlreadyRegisteredException;
 import com.ecommerce.userauth.domain.EmailVerification;
@@ -9,6 +10,7 @@ import com.ecommerce.userauth.domain.InvalidTokenException;
 import com.ecommerce.userauth.domain.OutboxEvent;
 import com.ecommerce.userauth.domain.RateLimitExceededException;
 import com.ecommerce.userauth.domain.User;
+import com.ecommerce.userauth.outbox.OutboxEventEnvelope;
 import com.ecommerce.userauth.repository.EmailVerificationRepository;
 import com.ecommerce.userauth.repository.OutboxEventRepository;
 import com.ecommerce.userauth.repository.RateLimitRepository;
@@ -17,6 +19,7 @@ import com.ecommerce.userauth.repository.RotatedRefreshToken;
 import com.ecommerce.userauth.repository.TokenBlacklistRepository;
 import com.ecommerce.userauth.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -168,12 +171,27 @@ public class AuthService {
         return new IssuedTokens(accessToken, refreshToken);
     }
 
-    private void writeOutboxEvent(UUID aggregateId, String eventType, Map<String, Object> payload) {
+    private void writeOutboxEvent(UUID aggregateId, String eventType, Map<String, Object> data) {
+        UUID correlationId = currentCorrelationId();
+        OutboxEventEnvelope envelope = OutboxEventEnvelope.of(eventType, correlationId, data);
         try {
-            String json = objectMapper.writeValueAsString(payload);
-            outboxEventRepository.save(new OutboxEvent(aggregateId, eventType, json, UUID.randomUUID()));
+            String json = objectMapper.writeValueAsString(envelope);
+            outboxEventRepository.save(new OutboxEvent(aggregateId, eventType, json, correlationId));
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize outbox payload for " + eventType, e);
+        }
+    }
+
+    /** Reuses the request's correlation ID (set by {@link CorrelationIdFilter}) if present and a valid UUID. */
+    private static UUID currentCorrelationId() {
+        String correlationId = MDC.get(CorrelationIdFilter.MDC_KEY);
+        if (correlationId == null) {
+            return UUID.randomUUID();
+        }
+        try {
+            return UUID.fromString(correlationId);
+        } catch (IllegalArgumentException e) {
+            return UUID.randomUUID();
         }
     }
 }
