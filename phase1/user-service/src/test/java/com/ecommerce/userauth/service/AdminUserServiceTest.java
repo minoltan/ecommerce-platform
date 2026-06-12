@@ -90,6 +90,19 @@ class AdminUserServiceTest {
     }
 
     @Test
+    void listUsersFiltersByRoleOnly() {
+        Pageable pageable = PageRequest.of(0, 20);
+        User user = User.register(EMAIL, PASSWORD, "Jane Doe");
+        when(userRepository.findByRole(UserRole.ADMIN, pageable))
+                .thenReturn(new PageImpl<>(List.of(user)));
+
+        Page<User> result = adminUserService.listUsers(null, UserRole.ADMIN, pageable);
+
+        assertThat(result.getContent()).containsExactly(user);
+        verify(userRepository, never()).findAll(any(Pageable.class));
+    }
+
+    @Test
     void deactivateUserTransitionsStatusRevokesSessionsAndWritesOutboxEvent() {
         User user = User.register(EMAIL, PASSWORD, "Jane Doe");
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
