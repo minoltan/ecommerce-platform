@@ -1,0 +1,11 @@
+# docs/hld/deployment-architecture.md §3: minAvailable: 1 ensures a voluntary
+# disruption (node drain) never takes the 2-replica floor to zero.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: user-service-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: user-service

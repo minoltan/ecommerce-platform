@@ -452,6 +452,7 @@ downstream services rely on.
 | OQ-LLD-UA-04 | `component-diagrams.md` §3 missing: `EmailVerificationService`, `PasswordResetService`, `OutboxRelay`/`OutboxRepository` for `user_auth_outbox` (§4) | Architect | Open |
 | OQ-LLD-UA-05 | No reactivation flow for `DEACTIVATED` accounts (§5) — confirm this is intentional (admin data-fix only) or needs a UC | PM | Open |
 | OQ-LLD-UA-06 | `POST /admin/users/{userId}/deactivate` (§8.1, UC-UA-09) missing from `user-service-api.yaml` | Architect | Resolved (DEV-006) — endpoint and `GET /admin/users` added to `user-service-api.yaml`. §8.1's "blacklist `currentJti`" step is not implemented: the service has no record of a deactivated user's active access-token `jti`, so it expires naturally (≤15 min). Confirm this is acceptable or needs a jti-tracking design. |
+| OQ-LLD-UA-07 | `docs/hld/deployment-architecture.md` §7 specifies a centralised `phase1/k8s/base/user-auth-service/...` Kustomize layout, but the Phase 3 scaffold (DEV-EPIC-000) created per-service `phase1/user-service/k8s/{base,overlays}`, matching `CLAUDE.md`'s repo-structure section ("Each service ... owns its ... `k8s/` manifests"). DEV-007/86exxgxnz implemented the per-service layout. Architect to reconcile `deployment-architecture.md` §7 (centralised layout assumes a shared `ecommerce` namespace + ingress that don't exist yet) — likely amend §7 to "per-service `k8s/`, aggregated by a root `phase1/k8s/overlays/*` that references each service's overlay" | Architect | Open |
 
 ### Next Artefacts
 
