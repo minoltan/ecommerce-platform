@@ -9,6 +9,7 @@ import com.ecommerce.userauth.domain.InvalidCredentialsException;
 import com.ecommerce.userauth.domain.InvalidRefreshTokenException;
 import com.ecommerce.userauth.domain.InvalidTokenException;
 import com.ecommerce.userauth.domain.RateLimitExceededException;
+import com.ecommerce.userauth.domain.UserNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -59,6 +60,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RateLimitExceededException.class)
     public ResponseEntity<ErrorResponse> handleRateLimitExceeded(RateLimitExceededException e) {
         return error(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMIT_EXCEEDED", e.getMessage());
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleUserNotFound(UserNotFoundException e) {
+        return error(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", e.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

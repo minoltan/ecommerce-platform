@@ -30,7 +30,7 @@ public abstract class AbstractIntegrationTest {
     @Container
     @ServiceConnection
     public static final KafkaContainer KAFKA =
-            new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"));
+            new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1").asCompatibleSubstituteFor("apache/kafka"));
 
     @Container
     static final GenericContainer<?> REDIS =
