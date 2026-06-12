@@ -42,3 +42,7 @@ management:
 jwt:
   issuer: ecommerce-platform
   access-token-ttl-seconds: 900
+  # Base64-encoded PKCS8 private key / X.509 public key (PEM body, no headers/newlines).
+  # If either is blank, an ephemeral RSA-2048 key pair is generated at startup (dev/test only).
+  private-key: ${JWT_PRIVATE_KEY:}
+  public-key: ${JWT_PUBLIC_KEY:}
