@@ -230,6 +230,58 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /products/{productId}/variants:
+    post:
+      summary: Add a variant to a product (admin only)
+      operationId: addProductVariant
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVariantRequest'
+      responses:
+        '201':
+          description: Variant added; ProductVariantAdded event published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductVariant'
+        '409':
+          description: SKU already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /products/{productId}/variants/{variantId}:
+    delete:
+      summary: Remove a variant from a product (admin only)
+      operationId: removeProductVariant
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - name: variantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Variant removed; ProductVariantRemoved event published
+        '404':
+          description: Variant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /categories:
     get:
       summary: List all categories (tree structure)
@@ -271,6 +323,65 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /categories/{categoryId}:
+    patch:
+      summary: Rename a category or move it under a new parent (admin only)
+      operationId: updateCategory
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCategoryRequest'
+      responses:
+        '200':
+          description: Category updated (renamed and/or moved to new parentId)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '409':
+          description: Category name already exists under target parent, or move would create a cycle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete a category (admin only)
+      operationId: deleteCategory
+      tags: [Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Category deleted
+        '409':
+          description: Category has products or child categories assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Category not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -299,7 +410,7 @@ components:
         currency:    { type: string, default: INR }
         thumbnailUrl: { type: string, format: uri }
         categoryId:  { type: string, format: uuid }
-        status:      { type: string, enum: [DRAFT, PUBLISHED, UNPUBLISHED, DELETED] }
+        status:      { type: string, enum: [DRAFT, PUBLISHED, UNPUBLISHED, ARCHIVED] }
         stockStatus: { type: string, enum: [IN_STOCK, LOW_STOCK, OUT_OF_STOCK] }
 
     ProductDetail:
@@ -387,6 +498,20 @@ components:
       properties:
         name:     { type: string }
         parentId: { type: string, format: uuid }
+
+    UpdateCategoryRequest:
+      type: object
+      properties:
+        name:     { type: string }
+        parentId: { type: string, format: uuid, description: "Set to move the category under a new parent; omit to leave unchanged" }
+
+    CreateVariantRequest:
+      type: object
+      required: [sku, attributes]
+      properties:
+        sku:           { type: string }
+        attributes:    { type: object, additionalProperties: { type: string } }
+        priceOverride: { type: number, format: double, minimum: 0 }
 
     ErrorResponse:
       type: object
