@@ -241,12 +241,12 @@ hotfix/*      ← emergency fixes
 
 ---
 
-### ⏳ Phase 2 — System Architecture
-**Branch:** `feature/SA-*` → `develop`
+### ✅ Phase 2 — System Architecture
+**Branch:** `feature/SA-*` → `develop` → `release/phase-2-architecture` → `main`
 **Role:** `skills/roles/system-architect.md`
 **ClickUp List:** Phase-2-SA (ID: 901818617888)
-**Git Tag:** `v0.2.0` (on completion)
-**Status:** In Progress ⏳
+**Git Tag:** `v0.2.0`
+**Status:** Complete ✅
 
 #### Artifacts to Produce
 
@@ -421,7 +421,7 @@ docker-build → trivy-scan → push-to-registry → deploy-staging → smoke-te
 |---------|-------|------|--------|
 | v0.0.1 | Project initialized | June 2026 | ✅ |
 | v0.1.0 | Phase 1: Requirements complete | June 2026 | ✅ |
-| v0.2.0 | Phase 2: Architecture complete | — | ⬜ |
+| v0.2.0 | Phase 2: Architecture complete | 2026-06-12 | ✅ |
 | v0.3.0 | Phase 3: Implementation complete | — | ⬜ |
 | v0.4.0 | Phase 4: Testing complete | — | ⬜ |
 | v0.5.0 | Phase 5: CI/CD complete | — | ⬜ |
