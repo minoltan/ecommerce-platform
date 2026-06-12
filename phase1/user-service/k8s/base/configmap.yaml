@@ -1,0 +1,13 @@
+# Non-sensitive configuration (NFR-MAINT-006). DB/Redis/Kafka hostnames follow the
+# docs/hld/deployment-architecture.md §2 namespace-qualified DNS convention:
+# <name>.ecommerce-infra.svc.cluster.local.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-service-config
+data:
+  DB_HOST: user-mysql.ecommerce-infra.svc.cluster.local
+  DB_PORT: "3306"
+  REDIS_HOST: redis.ecommerce-infra.svc.cluster.local
+  REDIS_PORT: "6379"
+  KAFKA_BOOTSTRAP_SERVERS: kafka.ecommerce-infra.svc.cluster.local:9092

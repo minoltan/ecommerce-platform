@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ecommerce
+
+resources:
+  - ../../base
+
+# docs/hld/deployment-architecture.md §7 "Local dev": single-node cluster —
+# 1 replica, no pod anti-affinity, no HPA/PDB (irrelevant on one node).
+patches:
+  - target:
+      kind: Deployment
+      name: user-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/affinity
+        value: {}
+  - path: delete-hpa.yaml
+  - path: delete-pdb.yaml
+
+# Points the service at the docker-compose.infra.yml services running on the host.
+configMapGenerator:
+  - name: user-service-config
+    behavior: merge
+    literals:
+      - DB_HOST=host.docker.internal
+      - DB_PORT=3306
+      - REDIS_HOST=host.docker.internal
+      - REDIS_PORT=6379
+      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092
+
+generatorOptions:
+  disableNameSuffixHash: true
