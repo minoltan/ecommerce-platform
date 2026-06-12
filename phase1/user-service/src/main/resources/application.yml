@@ -28,6 +28,15 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
       group-id: user-service.user-events
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+
+# OutboxRelay poll interval (LLD §11 — ≤ 500ms eventual-consistency target).
+outbox:
+  relay:
+    poll-interval-ms: 500
 
 management:
   endpoints:

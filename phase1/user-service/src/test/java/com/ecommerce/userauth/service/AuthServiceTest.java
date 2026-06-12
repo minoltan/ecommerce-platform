@@ -18,6 +18,7 @@ import com.ecommerce.userauth.repository.RotatedRefreshToken;
 import com.ecommerce.userauth.repository.TokenBlacklistRepository;
 import com.ecommerce.userauth.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -65,7 +66,8 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         authService = new AuthService(userRepository, emailVerificationRepository, outboxEventRepository,
-                refreshTokenRepository, tokenBlacklistRepository, rateLimitRepository, jwtService, new ObjectMapper());
+                refreshTokenRepository, tokenBlacklistRepository, rateLimitRepository, jwtService,
+                new ObjectMapper().registerModule(new JavaTimeModule()));
     }
 
     @Test
