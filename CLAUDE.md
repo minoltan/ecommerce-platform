@@ -79,16 +79,24 @@ ecommerce-platform/
 
 ---
 
-## Current Phase: Requirement Engineering
+## Completed Artefacts
 
-The project is in **Requirement Engineering**. Work at this stage produces:
+- **Phase 1 — Requirement Engineering** (`v0.1.0`): event storming, functional/non-functional requirements, user stories, acceptance criteria, OpenAPI stubs, use case diagrams for all 7 bounded contexts.
+- **Phase 2 — System Architecture** (`v0.2.0`): C4 Level 1–3 diagrams, sequence diagrams, ER diagrams, order state machine, ADR-0001–ADR-0014, all 7 bounded-context LLDs, cross-cutting HLD sync rounds, API Gateway design, Kubernetes deployment architecture.
 
-- **Functional requirements** — user stories per bounded context, acceptance criteria
-- **Non-functional requirements** — availability, latency, throughput, consistency targets with numeric SLOs
-- **Domain model** — ubiquitous language glossary, aggregate boundaries, domain event catalogue
-- **System context diagram** — C4 Level 1 (actors, system, external dependencies)
+## Current Phase: Java Microservices Implementation (Phase 3)
 
-No service code should be written before each context has a completed LLD.
+The project is in **Phase 3 — Java Microservices Implementation** (`v0.3.0` on completion). Work at this stage implements the Phase 1 microservices per each bounded context's completed LLD, following `skills/roles/backend-developer.md`:
+
+- Multi-module Maven project under `phase1/`, one module per bounded context
+- Flyway migrations matching each LLD's DB Schema section
+- Domain aggregates, REST APIs (per `docs/api-specs/*.yaml`), Kafka outbox publishers/consumers
+- Unit + integration tests (JUnit 5, Mockito, Testcontainers)
+- Per-service `Dockerfile` and `phase1/k8s/{base,overlays}` Kustomize manifests
+
+Build order (per `WORKFLOW.md`): User & Auth → Product Catalog → Cart → Order → Payment → Inventory → Notification → API Gateway.
+
+Implementation must follow each context's LLD and referenced ADRs — do not redesign during implementation; raise discrepancies as Open Questions / ADR amendments instead.
 
 ---
 
