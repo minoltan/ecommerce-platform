@@ -407,7 +407,7 @@ saga-join requirement. ADR-0014's saga-join side-table pattern does not apply he
 | `POST /auth/register` → `RegisterResponse` | returns `userId` | §3.4 `UserRegistered` payload | ✅ Match |
 | `POST /auth/login` → `TokenResponse` | `accessToken`, `expiresIn`, `tokenType: Bearer` | ADR-0011 access-token TTL (900s) | ✅ Match |
 | Refresh-token transport | Not modelled in OpenAPI schema (cookie-based, per ADR-0011) | §6.2 | ✅ Expected — `HttpOnly` cookies are out of OpenAPI's request/response body model; no fix needed |
-| `POST /admin/users/{userId}/deactivate` (§8.1, UC-UA-09) | **Not present** in `user-service-api.yaml` | §8.1 | ❌ Missing endpoint — flagged as **OQ-LLD-UA-06** |
+| `POST /admin/users/{userId}/deactivate` (§8.1, UC-UA-09) | Added in DEV-006, plus `GET /admin/users` for admin search | §8.1 | ✅ Resolved — see **OQ-LLD-UA-06** for the remaining `jti`-blacklist gap |
 
 ---
 
@@ -451,7 +451,7 @@ downstream services rely on.
 | OQ-LLD-UA-03 | Add `PasswordResetRequested` to `container-diagram.md` §5 `user-auth.*` topic row "Key events" (§9.1) | Architect | Open — small follow-up PR |
 | OQ-LLD-UA-04 | `component-diagrams.md` §3 missing: `EmailVerificationService`, `PasswordResetService`, `OutboxRelay`/`OutboxRepository` for `user_auth_outbox` (§4) | Architect | Open |
 | OQ-LLD-UA-05 | No reactivation flow for `DEACTIVATED` accounts (§5) — confirm this is intentional (admin data-fix only) or needs a UC | PM | Open |
-| OQ-LLD-UA-06 | `POST /admin/users/{userId}/deactivate` (§8.1, UC-UA-09) missing from `user-service-api.yaml` | Architect | Open — bundle with OQ-LLD-UA-04 |
+| OQ-LLD-UA-06 | `POST /admin/users/{userId}/deactivate` (§8.1, UC-UA-09) missing from `user-service-api.yaml` | Architect | Resolved (DEV-006) — endpoint and `GET /admin/users` added to `user-service-api.yaml`. §8.1's "blacklist `currentJti`" step is not implemented: the service has no record of a deactivated user's active access-token `jti`, so it expires naturally (≤15 min). Confirm this is acceptable or needs a jti-tracking design. |
 
 ### Next Artefacts
 

@@ -243,6 +243,48 @@ paths:
               schema:
                 $ref: '#/components/schemas/ValidationErrorResponse'
 
+  /admin/users:
+    get:
+      summary: List/search user accounts (admin only)
+      operationId: listUsers
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [UNVERIFIED, ACTIVE, DEACTIVATED]
+        - name: role
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [CUSTOMER, ADMIN, INVENTORY_MANAGER]
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: size
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 20 }
+      responses:
+        '200':
+          description: Paginated list of users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '403':
+          description: Caller is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /admin/users/{userId}/deactivate:
     post:
       summary: Deactivate a user account (admin only)
@@ -260,6 +302,10 @@ paths:
       responses:
         '200':
           description: Account deactivated; all tokens revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeactivateUserResponse'
         '403':
           description: Caller is not an admin
           content:
@@ -353,6 +399,37 @@ components:
       properties:
         displayName: { type: string }
         phone:       { type: string }
+
+    UserSummary:
+      type: object
+      required: [userId, email, status, role, createdAt]
+      properties:
+        userId:      { type: string, format: uuid }
+        email:       { type: string, format: email }
+        displayName: { type: string }
+        status:      { type: string, enum: [UNVERIFIED, ACTIVE, DEACTIVATED] }
+        role:        { type: string, enum: [CUSTOMER, ADMIN, INVENTORY_MANAGER] }
+        createdAt:   { type: string, format: date-time }
+
+    UserListResponse:
+      type: object
+      required: [users, page, pageSize, totalElements, totalPages]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserSummary'
+        page:          { type: integer }
+        pageSize:      { type: integer }
+        totalElements: { type: integer }
+        totalPages:    { type: integer }
+
+    DeactivateUserResponse:
+      type: object
+      required: [userId, status]
+      properties:
+        userId: { type: string, format: uuid }
+        status: { type: string, enum: [UNVERIFIED, ACTIVE, DEACTIVATED] }
 
     ErrorResponse:
       type: object
