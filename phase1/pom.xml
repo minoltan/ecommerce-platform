@@ -31,7 +31,7 @@
     </properties>
 
     <modules>
-        <!-- Service modules are added here as each DEV-EPIC is scaffolded -->
+        <module>user-service</module>
     </modules>
 
     <dependencyManagement>
