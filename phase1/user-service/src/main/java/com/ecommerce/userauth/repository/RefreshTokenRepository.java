@@ -8,7 +8,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.HexFormat;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -17,10 +16,7 @@ import java.util.UUID;
  *
  * <p>Each session is stored under {@code refresh:{userId}:{tokenId}} with a 7-day TTL, holding
  * the SHA-256 hash of the opaque secret half of the token. The token returned to the client is
- * {@code "{userId}.{tokenId}.{secret}"} — embedding {@code userId} lets {@code /auth/refresh}
- * and {@code /auth/logout} resolve a session from the {@code refreshToken} alone, as required by
- * the {@code RefreshTokenRequest} schema (no separate user identifier). Only the hash of
- * {@code secret} is persisted.
+ * {@code "{tokenId}.{secret}"}; only the hash of {@code secret} is persisted.
  */
 @Repository
 public class RefreshTokenRepository {
@@ -39,40 +35,43 @@ public class RefreshTokenRepository {
         String tokenId = UUID.randomUUID().toString();
         String secret = UUID.randomUUID().toString();
         redis.opsForValue().set(key(userId, tokenId), hash(secret), TTL);
-        return new IssuedRefreshToken(userId + SEPARATOR + tokenId + SEPARATOR + secret, tokenId);
+        return new IssuedRefreshToken(tokenId + SEPARATOR + secret, tokenId);
     }
 
     /**
-     * Validates a presented refresh token, returning the userId it belongs to if it is well-formed
-     * and matches a live (non-expired, non-revoked) session. Does not consume/rotate the token.
+     * Validates a presented refresh token for the given user against the stored hash.
+     * Does not consume/rotate the token.
      */
-    public Optional<UUID> validate(String presentedToken) {
-        return parse(presentedToken)
-                .filter(parsed -> hash(parsed.secret()).equals(redis.opsForValue().get(key(parsed.userId(), parsed.tokenId()))))
-                .map(ParsedToken::userId);
+    public boolean validate(UUID userId, String presentedToken) {
+        return tokenId(presentedToken)
+                .map(parsed -> {
+                    String stored = redis.opsForValue().get(key(userId, parsed.tokenId()));
+                    return stored != null && stored.equals(hash(parsed.secret()));
+                })
+                .orElse(false);
     }
 
     /**
-     * Rotates a refresh token: revokes the presented token and issues a new one for the same user
-     * (LLD §6.2 refresh-rotation). Returns empty if the presented token is invalid, unknown, or
-     * already used, in which case the caller should treat this as a possible token-replay and may
-     * choose to revoke all sessions for the user.
+     * Rotates a refresh token: revokes the presented token and issues a new one, atomically
+     * from the caller's perspective (LLD §6.2 refresh-rotation). Returns empty if the presented
+     * token is invalid or unknown, in which case the caller should treat this as a possible
+     * token-replay and may choose to revoke all sessions for the user.
      */
-    public Optional<RotatedRefreshToken> rotate(String presentedToken) {
-        return parse(presentedToken).flatMap(parsed -> {
-            String key = key(parsed.userId(), parsed.tokenId());
+    public java.util.Optional<IssuedRefreshToken> rotate(UUID userId, String presentedToken) {
+        return tokenId(presentedToken).flatMap(parsed -> {
+            String key = key(userId, parsed.tokenId());
             String stored = redis.opsForValue().get(key);
             if (stored == null || !stored.equals(hash(parsed.secret()))) {
-                return Optional.empty();
+                return java.util.Optional.empty();
             }
             redis.delete(key);
-            return Optional.of(new RotatedRefreshToken(parsed.userId(), issue(parsed.userId())));
+            return java.util.Optional.of(issue(userId));
         });
     }
 
-    /** Revokes the session identified by the presented token (LLD §6.2 logout-single). No-op if malformed. */
-    public void revoke(String presentedToken) {
-        parse(presentedToken).ifPresent(parsed -> redis.delete(key(parsed.userId(), parsed.tokenId())));
+    /** Revokes a single session by tokenId (LLD §6.2 logout-single). */
+    public void revoke(UUID userId, String tokenId) {
+        redis.delete(key(userId, tokenId));
     }
 
     /** Revokes all sessions for a user (LLD §6.2 logout-all / password-change). */
@@ -87,19 +86,17 @@ public class RefreshTokenRepository {
         return "refresh:" + userId + ":" + tokenId;
     }
 
-    private record ParsedToken(UUID userId, String tokenId, String secret) {
+    private record ParsedToken(String tokenId, String secret) {
     }
 
-    private static Optional<ParsedToken> parse(String presentedToken) {
-        String[] parts = presentedToken.split("\\" + SEPARATOR, 3);
-        if (parts.length != 3 || parts[0].isEmpty() || parts[1].isEmpty() || parts[2].isEmpty()) {
-            return Optional.empty();
+    private static java.util.Optional<ParsedToken> tokenId(String presentedToken) {
+        int separatorIndex = presentedToken.indexOf(SEPARATOR);
+        if (separatorIndex <= 0 || separatorIndex == presentedToken.length() - 1) {
+            return java.util.Optional.empty();
         }
-        try {
-            return Optional.of(new ParsedToken(UUID.fromString(parts[0]), parts[1], parts[2]));
-        } catch (IllegalArgumentException e) {
-            return Optional.empty();
-        }
+        return java.util.Optional.of(new ParsedToken(
+                presentedToken.substring(0, separatorIndex),
+                presentedToken.substring(separatorIndex + 1)));
     }
 
     private static String hash(String secret) {

@@ -114,7 +114,7 @@ Implementation must follow each context's LLD and referenced ADRs — do not red
 # Run a single test class
 ./mvnw test -pl <context>-service -Dtest=ClassName
 
-# Start local infrastructure (Kafka, MySQL, Redis)
+# Start local infrastructure (Kafka, MySQL, Redis) — see infra/README.md
 docker compose -f docker-compose.infra.yml up -d
 
 # Build and start all services

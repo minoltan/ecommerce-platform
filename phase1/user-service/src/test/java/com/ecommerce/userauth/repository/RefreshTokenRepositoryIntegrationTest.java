@@ -26,7 +26,7 @@ class RefreshTokenRepositoryIntegrationTest extends AbstractIntegrationTest {
 
         IssuedRefreshToken issued = refreshTokenRepository.issue(userId);
 
-        assertThat(refreshTokenRepository.validate(issued.token())).contains(userId);
+        assertThat(refreshTokenRepository.validate(userId, issued.token())).isTrue();
 
         Long ttlSeconds = redis.getExpire("refresh:" + userId + ":" + issued.tokenId(), TimeUnit.SECONDS);
         assertThat(ttlSeconds).isPositive();
@@ -38,8 +38,8 @@ class RefreshTokenRepositoryIntegrationTest extends AbstractIntegrationTest {
         UUID userId = UUID.randomUUID();
         refreshTokenRepository.issue(userId);
 
-        assertThat(refreshTokenRepository.validate(userId + "." + UUID.randomUUID() + "." + UUID.randomUUID())).isEmpty();
-        assertThat(refreshTokenRepository.validate("not-a-valid-token")).isEmpty();
+        assertThat(refreshTokenRepository.validate(userId, UUID.randomUUID() + "." + UUID.randomUUID())).isFalse();
+        assertThat(refreshTokenRepository.validate(userId, "not-a-valid-token")).isFalse();
     }
 
     @Test
@@ -47,21 +47,20 @@ class RefreshTokenRepositoryIntegrationTest extends AbstractIntegrationTest {
         UUID userId = UUID.randomUUID();
         IssuedRefreshToken first = refreshTokenRepository.issue(userId);
 
-        Optional<RotatedRefreshToken> rotated = refreshTokenRepository.rotate(first.token());
+        Optional<IssuedRefreshToken> rotated = refreshTokenRepository.rotate(userId, first.token());
 
         assertThat(rotated).isPresent();
-        assertThat(rotated.get().userId()).isEqualTo(userId);
-        assertThat(refreshTokenRepository.validate(first.token())).isEmpty();
-        assertThat(refreshTokenRepository.validate(rotated.get().token().token())).contains(userId);
+        assertThat(refreshTokenRepository.validate(userId, first.token())).isFalse();
+        assertThat(refreshTokenRepository.validate(userId, rotated.get().token())).isTrue();
     }
 
     @Test
     void rotatingAnAlreadyRevokedTokenFails() {
         UUID userId = UUID.randomUUID();
         IssuedRefreshToken first = refreshTokenRepository.issue(userId);
-        refreshTokenRepository.revoke(first.token());
+        refreshTokenRepository.revoke(userId, first.tokenId());
 
-        assertThat(refreshTokenRepository.rotate(first.token())).isEmpty();
+        assertThat(refreshTokenRepository.rotate(userId, first.token())).isEmpty();
     }
 
     @Test
@@ -72,7 +71,7 @@ class RefreshTokenRepositoryIntegrationTest extends AbstractIntegrationTest {
 
         refreshTokenRepository.revokeAll(userId);
 
-        assertThat(refreshTokenRepository.validate(first.token())).isEmpty();
-        assertThat(refreshTokenRepository.validate(second.token())).isEmpty();
+        assertThat(refreshTokenRepository.validate(userId, first.token())).isFalse();
+        assertThat(refreshTokenRepository.validate(userId, second.token())).isFalse();
     }
 }
