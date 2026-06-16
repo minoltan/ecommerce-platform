@@ -61,7 +61,7 @@ CREATE TABLE user_auth_outbox (
     aggregate_id    CHAR(36)      NOT NULL,
     event_type      VARCHAR(100)  NOT NULL,
     payload         JSON          NOT NULL,
-    correlation_id  VARCHAR(36)   NOT NULL,
+    correlation_id  CHAR(36)      NOT NULL,
     published       BOOLEAN       NOT NULL DEFAULT FALSE,
     created_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     published_at    DATETIME(3)   NULL,

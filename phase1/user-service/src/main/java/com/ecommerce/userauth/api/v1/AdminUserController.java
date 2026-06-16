@@ -5,6 +5,7 @@ import com.ecommerce.userauth.api.v1.dto.UserListResponse;
 import com.ecommerce.userauth.domain.UserRole;
 import com.ecommerce.userauth.domain.UserStatus;
 import com.ecommerce.userauth.service.AdminUserService;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +24,7 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/v1/admin/users")
+@SecurityRequirement(name = "bearerAuth")
 public class AdminUserController {
 
     private final AdminUserService adminUserService;
