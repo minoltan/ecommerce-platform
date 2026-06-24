@@ -85,7 +85,7 @@ sequenceDiagram
     end
     AS->>AS: user.login(password) — BCrypt.checkpw, status guard
     AS->>Redis: reset rate:{userId}:login
-    AS->>DB: save(user) — no field changes; no-op UPDATE
+    AS->>DB: save(user) — no field changes, no-op UPDATE
     AS->>OB: write UserLoggedIn outbox row
     AS->>JWT: issueAccessToken(user)
     JWT-->>AS: RS256 JWT {sub, email, role, jti, iat, exp=+15m, iss}
@@ -129,9 +129,9 @@ sequenceDiagram
     participant Redis
     participant Ctrl as Controller
 
-    C->>SF: GET /v1/something (Authorization: Bearer <jwt>)
+    C->>SF: GET /v1/something (Authorization: Bearer {jwt})
     SF->>BT: NimbusJwtDecoder.withPublicKey(...) verifies RS256 signature + exp
-    BT->>BT: JwtAuthenticationConverter maps claim "role" → ROLE_<role>
+    BT->>BT: JwtAuthenticationConverter maps claim "role" → ROLE_{role}
     BT->>BL: addFilterAfter(..., BearerTokenAuthenticationFilter.class)
     BL->>Redis: isBlacklisted(jti) — GET blacklist:{jti}
     alt blacklisted
@@ -225,7 +225,7 @@ sequenceDiagram
     participant TBR as TokenBlacklistRepository
     participant Redis
 
-    C->>AC: POST /v1/auth/logout {refreshToken}<br/>Authorization: Bearer <accessToken>
+    C->>AC: POST /v1/auth/logout {refreshToken}<br/>Authorization: Bearer {accessToken}
     alt Authorization header missing or not "Bearer "
         AC-->>C: 401 INVALID_ACCESS_TOKEN
     end
