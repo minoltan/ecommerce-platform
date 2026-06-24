@@ -6,8 +6,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -62,6 +67,44 @@ class RefreshTokenRepositoryIntegrationTest extends AbstractIntegrationTest {
         refreshTokenRepository.revoke(first.token());
 
         assertThat(refreshTokenRepository.rotate(first.token())).isEmpty();
+    }
+
+    @Test
+    void concurrentRotationOfTheSameTokenOnlySucceedsOnce() throws Exception {
+        // Regresses the race fixed by GETDEL in RefreshTokenRepository#rotate (ADR-0015): two
+        // requests rotating the same token must not both succeed and issue two new sessions.
+        UUID userId = UUID.randomUUID();
+        IssuedRefreshToken first = refreshTokenRepository.issue(userId);
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<Optional<RotatedRefreshToken>>> futures = List.of(
+                    executor.submit(() -> rotateAfterBarrier(first.token(), ready, start)),
+                    executor.submit(() -> rotateAfterBarrier(first.token(), ready, start)));
+
+            ready.await();
+            start.countDown();
+
+            long successCount = 0;
+            for (Future<Optional<RotatedRefreshToken>> future : futures) {
+                if (future.get(5, TimeUnit.SECONDS).isPresent()) {
+                    successCount++;
+                }
+            }
+
+            assertThat(successCount).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private Optional<RotatedRefreshToken> rotateAfterBarrier(String token, CountDownLatch ready, CountDownLatch start)
+            throws InterruptedException {
+        ready.countDown();
+        start.await();
+        return refreshTokenRepository.rotate(token);
     }
 
     @Test
