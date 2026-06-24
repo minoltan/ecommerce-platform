@@ -20,6 +20,7 @@ import com.ecommerce.userauth.repository.TokenBlacklistRepository;
 import com.ecommerce.userauth.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.MDC;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -73,6 +74,13 @@ public class AuthService {
     /**
      * {@code POST /auth/register}. Creates an {@code UNVERIFIED} user, issues an email
      * verification token, and writes a {@code UserRegistered} outbox event.
+     *
+     * <p>{@code existsByEmail} is a fast-path check only — the real guarantee against two
+     * concurrent registrations for the same email (across service instances) is the
+     * {@code uq_users_email} constraint. {@code saveAndFlush} forces the INSERT to run
+     * synchronously so a constraint violation surfaces here as
+     * {@link EmailAlreadyRegisteredException} instead of leaking out of the transaction as a
+     * raw {@link DataIntegrityViolationException} (ADR-0015).
      */
     @Transactional
     public UUID register(Email email, String rawPassword, String displayName, String clientIp) {
@@ -84,7 +92,11 @@ public class AuthService {
         }
 
         User user = User.register(email, rawPassword, displayName == null ? "" : displayName);
-        userRepository.save(user);
+        try {
+            userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException e) {
+            throw new EmailAlreadyRegisteredException(email);
+        }
 
         EmailVerification verification = EmailVerification.issue(user.getId(), Instant.now(), EMAIL_VERIFICATION_TTL);
         emailVerificationRepository.save(verification);

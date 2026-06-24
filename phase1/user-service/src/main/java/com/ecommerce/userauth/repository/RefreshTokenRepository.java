@@ -57,15 +57,20 @@ public class RefreshTokenRepository {
      * (LLD §6.2 refresh-rotation). Returns empty if the presented token is invalid, unknown, or
      * already used, in which case the caller should treat this as a possible token-replay and may
      * choose to revoke all sessions for the user.
+     *
+     * <p>Uses Redis {@code GETDEL} (via {@code getAndDelete}) so the read-and-revoke is one atomic
+     * command: if two requests race to rotate the same token, exactly one observes the stored hash
+     * and the other gets {@code null} and fails (ADR-0015). A separate GET-then-DELETE would let
+     * both requests pass validation before either deletes the key, issuing two new sessions for one
+     * rotation.
      */
     public Optional<RotatedRefreshToken> rotate(String presentedToken) {
         return parse(presentedToken).flatMap(parsed -> {
             String key = key(parsed.userId(), parsed.tokenId());
-            String stored = redis.opsForValue().get(key);
+            String stored = redis.opsForValue().getAndDelete(key);
             if (stored == null || !stored.equals(hash(parsed.secret()))) {
                 return Optional.empty();
             }
-            redis.delete(key);
             return Optional.of(new RotatedRefreshToken(parsed.userId(), issue(parsed.userId())));
         });
     }

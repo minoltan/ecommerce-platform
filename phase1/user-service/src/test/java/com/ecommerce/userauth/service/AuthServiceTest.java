@@ -78,7 +78,7 @@ class AuthServiceTest {
         UUID userId = authService.register(EMAIL, PASSWORD, "Jane Doe", "203.0.113.1");
 
         assertThat(userId).isNotNull();
-        verify(userRepository).save(any(User.class));
+        verify(userRepository).saveAndFlush(any(User.class));
         verify(emailVerificationRepository).save(any(EmailVerification.class));
         verify(outboxEventRepository).save(any());
     }
@@ -91,7 +91,23 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.register(EMAIL, PASSWORD, "Jane Doe", "203.0.113.1"))
                 .isInstanceOf(EmailAlreadyRegisteredException.class);
 
-        verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void registerTranslatesUniqueConstraintViolationFromConcurrentRegistration() {
+        // existsByEmail misses (fast-path race loser) but the DB-level unique constraint on
+        // uq_users_email is the real guard (ADR-0015) — saveAndFlush surfaces the violation here.
+        when(rateLimitRepository.tryConsume(anyString(), anyLong(), any())).thenReturn(true);
+        when(userRepository.existsByEmail(EMAIL)).thenReturn(false);
+        when(userRepository.saveAndFlush(any(User.class)))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("uq_users_email"));
+
+        assertThatThrownBy(() -> authService.register(EMAIL, PASSWORD, "Jane Doe", "203.0.113.1"))
+                .isInstanceOf(EmailAlreadyRegisteredException.class);
+
+        verify(emailVerificationRepository, never()).save(any());
+        verify(outboxEventRepository, never()).save(any());
     }
 
     @Test

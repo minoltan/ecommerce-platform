@@ -212,7 +212,7 @@ Redis TTL makes that job unnecessary.
 | Operation | Redis action | Notes |
 |---|---|---|
 | Login (SD-02) | `SET refresh:{userId}:{tokenId} = tokenHash EX 604800` | One key per active session/device — supports multi-device login natively (resolves OQ-UA-02 from the superseded draft: logout is per-device by default) |
-| Refresh (SD-03) | `DEL refresh:{userId}:{oldTokenId}` then `SET refresh:{userId}:{newTokenId} ... EX 604800` | Rotation — old token single-use (ADR-0011) |
+| Refresh (SD-03) | `GETDEL refresh:{userId}:{oldTokenId}` then `SET refresh:{userId}:{newTokenId} ... EX 604800` | Rotation — old token single-use (ADR-0011). `GETDEL` makes the read-and-revoke step a single atomic command, so two concurrent rotations of the same token cannot both succeed (ADR-0015) |
 | Logout (single device) | `DEL refresh:{userId}:{tokenId}`; `SET blacklist:{jti} = 1 EX <remaining access TTL>` | |
 | Logout (all devices) / `deactivate()` (T-UA-02/03) | `SCAN` + `DEL refresh:{userId}:*`; blacklist current `jti` | Used by `UserDeactivated` and "stolen refresh token reuse detected" (SD-03 note) |
 | Password change | Same as "logout all devices" | All sessions invalidated per UC-UA-06 postcondition |
@@ -453,6 +453,7 @@ downstream services rely on.
 | OQ-LLD-UA-05 | No reactivation flow for `DEACTIVATED` accounts (§5) — confirm this is intentional (admin data-fix only) or needs a UC | PM | Open |
 | OQ-LLD-UA-06 | `POST /admin/users/{userId}/deactivate` (§8.1, UC-UA-09) missing from `user-service-api.yaml` | Architect | Resolved (DEV-006) — endpoint and `GET /admin/users` added to `user-service-api.yaml`. §8.1's "blacklist `currentJti`" step is not implemented: the service has no record of a deactivated user's active access-token `jti`, so it expires naturally (≤15 min). Confirm this is acceptable or needs a jti-tracking design. |
 | OQ-LLD-UA-07 | `docs/hld/deployment-architecture.md` §7 specifies a centralised `phase1/k8s/base/user-auth-service/...` Kustomize layout, but the Phase 3 scaffold (DEV-EPIC-000) created per-service `phase1/user-service/k8s/{base,overlays}`, matching `CLAUDE.md`'s repo-structure section ("Each service ... owns its ... `k8s/` manifests"). DEV-007/86exxgxnz implemented the per-service layout. Architect to reconcile `deployment-architecture.md` §7 (centralised layout assumes a shared `ecommerce` namespace + ingress that don't exist yet) — likely amend §7 to "per-service `k8s/`, aggregated by a root `phase1/k8s/overlays/*` that references each service's overlay" | Architect | Open |
+| OQ-LLD-UA-08 | Implementation surfaced two cross-instance races not covered by this LLD: (1) `AuthService.register`'s `existsByEmail`-then-`save` check-then-act, and (2) §6.2's refresh-rotation was GET-then-DELETE, letting two concurrent rotations of the same token both succeed. Resolved per **ADR-0015**: register now relies on `uq_users_email` + `saveAndFlush` translation; rotation now uses atomic `GETDEL` (reflected in §6.2 above) | Architect | Resolved (ADR-0015) |
 
 ### Next Artefacts
 
