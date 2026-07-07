@@ -189,7 +189,7 @@ sequenceDiagram
     PC-->>GW: HTTP 200 {content[], total, page, size}
     GW-->>User: HTTP 200
 
-    Note over DB,PC: MySQL FULLTEXT + Redis cache (ADR-0013).<br/>Cache TTL 5min balances freshness vs DB load;<br/>admin writes invalidate via DEL search:* directly.
+    Note over DB,PC: MySQL FULLTEXT + Redis cache (ADR-0013).<br/>Cache TTL 5min balances freshness vs DB load,<br/>admin writes invalidate via DEL search:* directly.
 ```
 
 ---
@@ -377,7 +377,7 @@ sequenceDiagram
     participant Redis
     participant NS as Notification Service
 
-    Note over IS: OrderPlaced consumed; availableQty < requested qty
+    Note over IS: OrderPlaced consumed, availableQty < requested qty
     IS->>IDB: No reservation written — constraint violated
     IS->>Kafka: PUBLISH inventory.stock.reservation-failed {orderId, sku, requestedQty, availableQty, correlationId}
 
@@ -497,7 +497,7 @@ sequenceDiagram
         NS->>AdminEmail: Low stock alert email {sku, productName, currentQty:0}
     end
 
-    Note over PC,Cache: Product no longer visible in search or browse (status=UNPUBLISHED, search:* cache invalidated).<br/>unpublish_reason=OUT_OF_STOCK lets replenishment auto-republish (SD-12);<br/>a MANUAL unpublish is never overridden by replenishment.
+    Note over PC,Cache: Product no longer visible in search or browse (status=UNPUBLISHED, search:* cache invalidated).<br/>unpublish_reason=OUT_OF_STOCK lets replenishment auto-republish (SD-12),<br/>a MANUAL unpublish is never overridden by replenishment.
 ```
 
 ---

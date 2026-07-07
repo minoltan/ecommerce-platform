@@ -240,7 +240,7 @@ sequenceDiagram
         else still failing AND retry_count + 1 == 4
             RS->>NDB: UPDATE status='DLQ', failed_at=now()
             RS->>NDB: (no Kafka publish — Notification is consumer-only, ADR-0012)
-            Note over RS: notification.dlq is populated by writing status='DLQ' rows;<br/>ops tooling queries notification_db directly<br/>(ADR-0012 mentions a notification.dlq Kafka topic — reconciled<br/>here as a DB-status-based DLQ to avoid Notification publishing<br/>events, which would contradict its "consumer-only, no domain<br/>events published" pattern stated in component-diagrams.md §9.<br/>Flagged in §11.)
+            Note over RS: notification.dlq is populated by writing status='DLQ' rows,<br/>ops tooling queries notification_db directly<br/>(ADR-0012 mentions a notification.dlq Kafka topic — reconciled<br/>here as a DB-status-based DLQ to avoid Notification publishing<br/>events, which would contradict its "consumer-only, no domain<br/>events published" pattern stated in component-diagrams.md §9.<br/>Flagged in §11.)
         end
     end
 

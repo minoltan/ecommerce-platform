@@ -382,7 +382,7 @@ sequenceDiagram
 
     alt Guest cart exists and non-empty
         CS->>Redis: EVAL mergeCarts.lua KEYS[cart:guest:{sessionId}, cart:user:{userId}]
-        Note over Redis: Lua script (atomic):<br/>1. HGETALL guest cart<br/>2. For each item: if (productId,variantId) exists in user cart,<br/>   sum quantities (INV-CT-01); else HSET as new item:{itemId}<br/>3. EXPIRE cart:user:{userId} 7d<br/>4. DEL cart:guest:{sessionId}
+        Note over Redis: Lua script (atomic):<br/>1. HGETALL guest cart<br/>2. For each item: if (productId,variantId) exists in user cart,<br/>   sum quantities (INV-CT-01), else HSET as new item:{itemId}<br/>3. EXPIRE cart:user:{userId} 7d<br/>4. DEL cart:guest:{sessionId}
         Redis-->>CS: mergedItemCount
     else No guest cart
         Note over CS: No action
