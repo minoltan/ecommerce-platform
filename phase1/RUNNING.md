@@ -15,6 +15,65 @@ Three ways to run any service: JVM + Docker infra (fastest for development), ful
 | kind / minikube / k3d | Local Kubernetes cluster |
 | openssl | RSA key pair generation (k8s only) |
 
+### Installing prerequisites on Ubuntu
+
+**Docker** — install from Docker's official apt repo, not the `snap` package. The
+snap build runs Docker under stricter AppArmor confinement, which is known to
+conflict with `kind`'s Docker-in-Docker control-plane container (mount/cgroup
+errors on `kind create cluster`). If `docker --version` already shows a snap
+install and `kind` misbehaves later, this is the first thing to rule out.
+
+```bash
+# Remove snap Docker if present
+sudo snap remove docker
+
+# Add Docker's official apt repo
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Install Docker Engine + Compose plugin
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Run docker without sudo
+sudo usermod -aG docker $USER
+newgrp docker
+
+docker --version
+docker compose version
+```
+
+**kubectl**
+
+```bash
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x kubectl
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+rm kubectl
+
+kubectl version --client
+```
+
+**kind**
+
+```bash
+curl -Lo kind "https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64"
+chmod +x kind
+sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
+rm kind
+
+kind version
+```
+
+`openssl` ships by default on Ubuntu; verify with `openssl version`.
+
 ---
 
 ## Infrastructure (shared by all services)
@@ -39,7 +98,7 @@ docker compose -f docker-compose.infra.yml down -v
 |---|---|---|
 | `ecommerce-mysql` | 3306 | Schema + user created automatically via `infra/mysql/init/` scripts |
 | `ecommerce-redis` | 6379 | |
-| `ecommerce-kafka` | 9092 | KRaft mode, single broker, auto-creates topics |
+| `ecommerce-kafka` | 9092 / 29092 | KRaft mode, single broker, auto-creates topics. `9092` (`PLAINTEXT` listener, advertised as `localhost:9092`) is for host-side tools (CLI, IDE plugins). `29092` (`DOCKER` listener, advertised as `host.docker.internal:29092`) is for other containers — see [Troubleshooting](#troubleshooting) if you connect from a container on `9092` and see repeating disconnects. |
 
 ### MySQL schemas
 
@@ -99,14 +158,22 @@ docker build -f user-service/Dockerfile -t user-service:latest .
 ```bash
 docker run --rm -d \
   --name user-service \
+  --add-host=host.docker.internal:host-gateway \
   -p 8081:8081 \
   -e DB_HOST=host.docker.internal \
   -e REDIS_HOST=host.docker.internal \
-  -e KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092 \
+  -e KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:29092 \
   user-service:latest
 ```
 
-> `host.docker.internal` resolves to the host machine from inside a container, reaching the ports exposed by the infra compose services.
+> `host.docker.internal` resolves to the host machine from inside a container, reaching
+> the ports exposed by the infra compose services. On **Docker Desktop** (Mac/Windows)
+> this hostname resolves automatically. On **native Docker Engine on Linux** it does
+> not — you must add `--add-host=host.docker.internal:host-gateway` explicitly, or the
+> container fails with `UnknownHostException: host.docker.internal`.
+>
+> Kafka uses port `29092`, not `9092`, for container-to-container connections — see the
+> infra table above and [Troubleshooting](#troubleshooting).
 
 ```bash
 # Follow logs
@@ -121,6 +188,21 @@ docker stop user-service
 ## Option 3 — Kubernetes (kind / minikube / k3d)
 
 The `k8s/overlays/local` overlay sets 1 replica, removes HPA/PDB, and points infra hosts at `host.docker.internal`.
+
+> **Known gap:** `overlays/local/kustomization.yaml` currently generates
+> `KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092` — the same broken pattern
+> documented under [Troubleshooting](#troubleshooting) for Option 2 (wrong port, and
+> `host.docker.internal` isn't auto-resolved inside `kind` node containers on native
+> Linux Docker either, since `kind` doesn't pass `--add-host` to its nodes). This
+> overlay has not yet been exercised end-to-end on a Linux `kind` cluster. Until it's
+> fixed, either:
+> - patch `KAFKA_BOOTSTRAP_SERVERS` to `host.docker.internal:29092` and add a
+>   `hostAliases` entry in the Deployment pointing `host.docker.internal` at the
+>   `kind` Docker network's gateway IP (`docker network inspect kind`), or
+> - skip host infra entirely for local k8s testing and apply `kubectl apply -k
+>   phase1/k8s/infra` instead, which deploys MySQL/Redis/Kafka *inside* the cluster —
+>   `base/configmap.yaml`'s in-cluster DNS values (`user-mysql.ecommerce-infra.svc.cluster.local`,
+>   etc.) then work with no host-networking tricks at all.
 
 **Step 1 — Build and load the image into the cluster**
 
@@ -223,3 +305,88 @@ All variables have `localhost` defaults — Option 1 works with zero configurati
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka broker address |
 | `JWT_PRIVATE_KEY` | _(auto-generated)_ | RSA private key — must be set for multi-replica k8s |
 | `JWT_PUBLIC_KEY` | _(auto-generated)_ | RSA public key — same requirement |
+
+---
+
+## Troubleshooting
+
+### `docker: address already in use` on port 8081 (or 3306/6379/9092)
+
+Find and free the port:
+
+```bash
+sudo lsof -i :8081
+# or
+sudo ss -ltnp | grep 8081
+
+# If it's a leftover container:
+docker ps -a --filter "publish=8081"
+docker rm -f <container>
+
+# If it's a local process (e.g. mvnw spring-boot:run still running):
+kill <PID>          # escalate to kill -9 only if it doesn't die
+```
+
+### `no main manifest attribute, in /app/app.jar`
+
+The jar built by `mvn package` isn't an executable Spring Boot jar — `java -jar`
+can't find a `Main-Class`. Cause: `spring-boot-maven-plugin` was declared only under
+`<pluginManagement>` in the parent `phase1/pom.xml`, which sets version/config for
+child modules to *inherit if referenced*, but never actually binds the `repackage`
+goal to the build. Fixed by adding the plugin to the parent's real `<build><plugins>`
+block (not just `pluginManagement`) with an explicit `repackage` execution, so every
+service module inherits a working build. If you scaffold a new service and hit this
+again, check `phase1/pom.xml`'s `<build><plugins>` section is still in place.
+
+### `UnknownHostException: host.docker.internal`
+
+Only happens on **native Docker Engine on Linux** (not Docker Desktop). Add
+`--add-host=host.docker.internal:host-gateway` to your `docker run` command — see
+[Option 2](#option-2--docker) above.
+
+### Kafka producer stuck in a `Bootstrap broker ... disconnected` loop
+
+The initial connection to Kafka succeeds, but every request after that fails. Cause:
+Kafka's `advertised.listeners` told the client to reconnect to `localhost:9092` —
+which, from inside a container, means the container itself, not the host. Fixed in
+`docker-compose.infra.yml` by adding a second `DOCKER` listener
+(`host.docker.internal:29092`) specifically for container-to-container traffic, while
+keeping `PLAINTEXT` (`localhost:9092`) for host-side tools. Use port `29092`, not
+`9092`, in `KAFKA_BOOTSTRAP_SERVERS` from any container.
+
+### Kafka container crash-loops: `Cluster ID string ... does not appear to be a valid UUID`
+
+KRaft mode requires `CLUSTER_ID` to be a 16-byte value base64url-encoded to exactly 22
+characters — not an arbitrary string. Generate a valid one:
+
+```bash
+python3 -c "
+import uuid, base64
+print(base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('='))
+"
+```
+
+and set it as `CLUSTER_ID` in `docker-compose.infra.yml`. Since the `kafka` service
+has no persistent volume, there's no stale storage to wipe — just
+`docker compose -f docker-compose.infra.yml up -d --force-recreate kafka`.
+
+### After editing `docker-compose.infra.yml`, the container still shows old behaviour
+
+`docker compose up -d` alone won't pick up env var changes for a container that's
+already running — it has to be recreated:
+
+```bash
+docker compose -f docker-compose.infra.yml up -d --force-recreate <service>
+```
+
+Also double check you're running `docker compose` from the directory containing
+`docker-compose.infra.yml` (repo root) — running it from `phase1/` (or any other
+subdirectory) fails with `open docker-compose.infra.yml: no such file or directory`
+and silently does nothing, leaving the old container running.
+
+### `kind create cluster` hangs or the control-plane node never becomes Ready
+
+Likely cause: Docker installed via `snap` runs under AppArmor confinement that can
+block the mounts/cgroups `kind`'s Docker-in-Docker control-plane container needs.
+Switch to Docker's official apt package — see
+[Installing prerequisites on Ubuntu](#installing-prerequisites-on-ubuntu).
