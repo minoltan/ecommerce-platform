@@ -1,0 +1,92 @@
+# Single-instance MySQL standing in for a StatefulSet (see README.md). Storage class
+# left unset so it falls back to the cluster default (EKS: gp2/gp3 via the EBS CSI
+# driver — see phase1/DEPLOYING_AWS.md step 2 for enabling that addon).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: user-mysql-data
+  namespace: ecommerce-infra
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-root-credentials
+  namespace: ecommerce-infra
+type: Opaque
+stringData:
+  # Test/teardown cluster only — matches docker-compose.infra.yml's local convention.
+  # A long-lived deployment must replace this via a secrets manager (deployment-architecture.md §6).
+  MYSQL_ROOT_PASSWORD: root
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-mysql
+  namespace: ecommerce-infra
+  labels:
+    app: user-mysql
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: user-mysql
+  template:
+    metadata:
+      labels:
+        app: user-mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0.39
+          ports:
+            - name: mysql
+              containerPort: 3306
+          envFrom:
+            - secretRef:
+                name: mysql-root-credentials
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost", "-uroot", "-p$(MYSQL_ROOT_PASSWORD)"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: user-mysql-data
+        - name: init-scripts
+          configMap:
+            name: mysql-init-scripts
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-mysql
+  namespace: ecommerce-infra
+spec:
+  selector:
+    app: user-mysql
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql

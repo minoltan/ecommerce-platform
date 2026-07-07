@@ -1,0 +1,23 @@
+# Temporary external access for the deploy/load-test/teardown session (no API Gateway
+# or Ingress controller exists yet — those come with docs/hld/api-gateway-design.md's
+# implementation, once more services exist). Separate from the internal ClusterIP
+# `user-service` Service defined in base/service.yaml.
+#
+# IMPORTANT (teardown): delete this Service *before* deleting the EKS cluster —
+# `kubectl delete -f loadbalancer-service.yaml` (or the whole overlay) so AWS releases
+# the NLB and its security group. Deleting the cluster first orphans the NLB and it
+# keeps billing.
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service-external
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+spec:
+  type: LoadBalancer
+  selector:
+    app: user-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
