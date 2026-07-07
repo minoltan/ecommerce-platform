@@ -223,12 +223,12 @@ hotfix/*      ← emergency fixes
 | Artifact | Path | ClickUp Task | Status |
 |----------|------|--------------|--------|
 | Event storming | `docs/requirements/event-storming.md` | — | ✅ Done |
-| Functional requirements | `docs/requirements/functional-requirements.md` | — | ✅ Done |
-| Non-functional requirements | `docs/requirements/non-functional-requirements.md` | — | ✅ Done |
-| User stories | `docs/requirements/user-stories.md` | — | ✅ Done |
-| Acceptance criteria | `docs/requirements/acceptance-criteria.md` | — | ✅ Done |
-| OpenAPI stubs (7 services) | `docs/api-specs/[service]-api.yaml` | — | ✅ Done |
 | Use case diagrams (7 contexts) | `docs/requirements/use-cases/[context]-use-cases.md` | — | ✅ Done |
+| User stories | `docs/requirements/user-stories.md` | — | ✅ Done |
+| Functional requirements | `docs/requirements/functional-requirements.md` | — | ✅ Done |
+| Acceptance criteria | `docs/requirements/acceptance-criteria.md` | — | ✅ Done |
+| Non-functional requirements | `docs/requirements/non-functional-requirements.md` | — | ✅ Done |
+| OpenAPI stubs (7 services) | `docs/api-specs/[service]-api.yaml` | — | ✅ Done |
 
 #### Bounded Contexts Covered
 - [x] User & Auth
