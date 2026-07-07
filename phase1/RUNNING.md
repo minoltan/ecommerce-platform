@@ -197,14 +197,14 @@ kubectl delete namespace ecommerce
 | `GET /actuator/health` | Overall health |
 | `GET /actuator/health/liveness` | Kubernetes liveness probe |
 | `GET /actuator/health/readiness` | Kubernetes readiness probe |
-| `GET /api/v1/auth/jwks` | Public JWKS endpoint (JWT verification) |
-| `POST /api/v1/auth/register` | Register a new user |
-| `POST /api/v1/auth/login` | Login — returns access + refresh tokens |
-| `POST /api/v1/auth/refresh` | Rotate refresh token |
-| `POST /api/v1/auth/logout` | Blacklist access token |
-| `POST /api/v1/auth/verify-email` | Email verification |
-| `GET /api/v1/admin/users` | List users (ADMIN role) |
-| `PATCH /api/v1/admin/users/{id}/deactivate` | Deactivate user (ADMIN role) |
+| `GET /v1/auth/.well-known/jwks.json` | Public JWKS endpoint (JWT verification) |
+| `POST /v1/auth/register` | Register a new user |
+| `POST /v1/auth/login` | Login — returns access + refresh tokens |
+| `POST /v1/auth/refresh` | Rotate refresh token |
+| `POST /v1/auth/logout` | Blacklist access token |
+| `POST /v1/auth/verify-email` | Email verification |
+| `GET /v1/admin/users` | List users (ADMIN role) |
+| `POST /v1/admin/users/{userId}/deactivate` | Deactivate user (ADMIN role) |
 
 ---
 

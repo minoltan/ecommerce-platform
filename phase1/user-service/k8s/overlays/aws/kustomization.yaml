@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ecommerce
+
+resources:
+  - ../../base
+  - loadbalancer-service.yaml
+
+# Replace <ACCOUNT_ID>/<REGION> with your ECR registry (phase1/DEPLOYING_AWS.md step 1).
+# `newTag` should match whatever tag you pushed (default: latest).
+images:
+  - name: user-service
+    newName: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/user-service
+    newTag: latest
+
+# base/deployment.yaml's replicas/HPA/PDB/anti-affinity are left as-is — they already
+# match docs/hld/deployment-architecture.md §3's User/Auth sizing (min 2, max 4).

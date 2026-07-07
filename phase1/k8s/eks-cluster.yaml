@@ -1,0 +1,42 @@
+# eksctl cluster config for a short-lived deploy/load-test/teardown session.
+# Cost-minimised on purpose (see phase1/DEPLOYING_AWS.md):
+#   - public-only subnets (no NAT Gateway ~$0.045/hr + data processing charges)
+#   - 2x on-demand t3.medium (enough for user-service x2 + MySQL + Redis + Kafka)
+#   - single managed node group, no Fargate profile
+# Not a production topology (deployment-architecture.md's target design has private
+# subnets, multi-AZ node pools, and 3-broker Kafka) — intentionally minimal for
+# proving out one service's AWS deployment before building the rest.
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: ecommerce-platform-test
+  region: ap-south-1
+  version: "1.30"
+
+iam:
+  withOIDC: true # required for IRSA — the EBS CSI driver addon needs this
+
+vpc:
+  clusterEndpoints:
+    publicAccess: true
+    privateAccess: false
+  nat:
+    gateway: Disable # cost trade-off: fine for a short test, not for a real deployment
+
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  - name: aws-ebs-csi-driver
+    wellKnownPolicies:
+      ebsCSIController: true
+
+managedNodeGroups:
+  - name: ng-1
+    instanceType: t3.medium
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 2
+    volumeSize: 20
+    privateNetworking: false
