@@ -1,0 +1,27 @@
+{
+  "name": "ecommerce-platform-infra-cdk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AWS CDK app provisioning Phase 1 EKS infrastructure (VPC, EKS cluster, ECR, GitHub OIDC deploy role). See README.md.",
+  "bin": {
+    "infra": "bin/infra.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "typecheck": "tsc --noEmit",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "aws-cdk": "2.160.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "@aws-cdk/lambda-layer-kubectl-v30": "^2.0.4",
+    "aws-cdk-lib": "2.160.0",
+    "constructs": "^10.3.0",
+    "source-map-support": "^0.5.21"
+  }
+}
