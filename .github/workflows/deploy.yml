@@ -1,0 +1,206 @@
+name: Deploy to AWS (EKS)
+
+# Full automated deploy: build+push image -> cdk deploy (VPC/EKS/ECR) ->
+# kubectl apply (infra + app + JWT secret) -> smoke test. See phase1/CICD.md.
+#
+# Triggers on push to main only (this repo's GitFlow means main advances via
+# deliberate release PRs, not every commit — ADR-0016 §4) and on manual
+# workflow_dispatch for re-runs. Teardown is a SEPARATE, manual-only workflow
+# (teardown.yml) — this workflow never destroys anything.
+#
+# COST NOTE: a successful run leaves a real, billed EKS cluster running
+# (~$0.20-0.25/hr, see phase1/DEPLOYING_AWS.md's cost table). Run
+# teardown.yml when you're done testing.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: aws-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  ECR_REPOSITORY: user-service
+  CLUSTER_STACK_NAME: EcommerceEksStack
+  APP_NAMESPACE: ecommerce
+  INFRA_NAMESPACE: ecommerce-infra
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.tag.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Test
+        working-directory: phase1
+        run: ./mvnw -B -pl user-service -am test
+
+      - id: tag
+        run: echo "value=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr-login
+
+      - name: Build and push
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          TAG: ${{ steps.tag.outputs.value }}
+        run: |
+          docker build -f phase1/user-service/Dockerfile \
+            -t "$REGISTRY/$ECR_REPOSITORY:$TAG" \
+            -t "$REGISTRY/$ECR_REPOSITORY:latest" \
+            phase1/
+          docker push "$REGISTRY/$ECR_REPOSITORY:$TAG"
+          docker push "$REGISTRY/$ECR_REPOSITORY:latest"
+
+  deploy-infra:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: phase1/infra/cdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: phase1/infra/cdk/package-lock.json
+
+      - run: npm ci
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Deliberately excludes EcommerceGithubOidcStack — that stack is a
+      # one-time human bootstrap step, not part of the routine pipeline
+      # (ADR-0016 §3, phase1/infra/cdk/README.md).
+      - name: cdk deploy
+        run: |
+          npx cdk deploy EcommerceNetworkStack EcommerceEcrStack EcommerceEksStack \
+            --require-approval never --outputs-file cdk-outputs.json
+
+  deploy-app:
+    needs: deploy-infra
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          CLUSTER_NAME=$(aws cloudformation describe-stacks --stack-name "$CLUSTER_STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)
+          echo "CLUSTER_NAME=$CLUSTER_NAME" >> "$GITHUB_ENV"
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: Deploy shared infra (MySQL, Redis, Kafka)
+        run: |
+          kubectl apply -k phase1/k8s/infra
+          kubectl -n "$INFRA_NAMESPACE" rollout status deployment/user-mysql --timeout=5m
+          kubectl -n "$INFRA_NAMESPACE" rollout status deployment/redis --timeout=5m
+          kubectl -n "$INFRA_NAMESPACE" rollout status deployment/kafka --timeout=5m
+
+      - name: Generate and apply JWT secret
+        run: |
+          # Fresh RSA key pair every deploy — every user-service replica must share
+          # one pair (phase1/DEPLOYING_AWS.md Step 4), but nothing about it needs to
+          # survive across deploys, and it must never be written to a log or artifact.
+          tmpdir=$(mktemp -d)
+          openssl genrsa -out "$tmpdir/jwt-private.pem" 2048
+          openssl rsa -in "$tmpdir/jwt-private.pem" -pubout -out "$tmpdir/jwt-public.pem"
+          kubectl -n "$APP_NAMESPACE" create secret generic user-service-secrets \
+            --from-literal=DB_USERNAME=user_service \
+            --from-literal=DB_PASSWORD=changeme \
+            --from-file=JWT_PRIVATE_KEY="$tmpdir/jwt-private.pem" \
+            --from-file=JWT_PUBLIC_KEY="$tmpdir/jwt-public.pem" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          rm -rf "$tmpdir"
+
+      - name: Deploy user-service
+        env:
+          TAG: ${{ needs.build-and-push.outputs.image-tag }}
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          sed -i "s/<ACCOUNT_ID>/$ACCOUNT_ID/; s/<REGION>/$AWS_REGION/; s/newTag: latest/newTag: $TAG/" \
+            phase1/user-service/k8s/overlays/aws/kustomization.yaml
+          kubectl apply -k phase1/user-service/k8s/overlays/aws
+          kubectl -n "$APP_NAMESPACE" rollout status deployment/user-service --timeout=5m
+
+  smoke-test:
+    needs: deploy-app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          CLUSTER_NAME=$(aws cloudformation describe-stacks --stack-name "$CLUSTER_STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: Wait for load balancer hostname
+        run: |
+          for i in $(seq 1 30); do
+            LB_HOST=$(kubectl -n "$APP_NAMESPACE" get svc user-service-external \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            [ -n "$LB_HOST" ] && break
+            sleep 10
+          done
+          if [ -z "$LB_HOST" ]; then
+            echo "::error::NLB hostname never appeared" && exit 1
+          fi
+          echo "LB_HOST=$LB_HOST" >> "$GITHUB_ENV"
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 12); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://$LB_HOST/actuator/health" || true)
+            [ "$code" = "200" ] && break
+            sleep 10
+          done
+          if [ "$code" != "200" ]; then
+            echo "::error::/actuator/health returned $code, expected 200" && exit 1
+          fi
+
+      - name: Smoke test — register endpoint
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://$LB_HOST/v1/auth/register" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"ci-smoke-$GITHUB_RUN_ID@example.com\",\"password\":\"Passw0rd!23\"}")
+          if [ "$code" != "201" ] && [ "$code" != "200" ]; then
+            echo "::error::register returned $code" && exit 1
+          fi

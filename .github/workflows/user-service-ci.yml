@@ -1,0 +1,42 @@
+name: user-service CI
+
+# Build/test feedback on every branch and PR — no AWS credentials, no cost.
+# The automated deploy pipeline (deploy.yml) is a separate workflow.
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'phase1/pom.xml'
+      - 'phase1/user-service/**'
+      - '.github/workflows/user-service-ci.yml'
+  pull_request:
+    paths:
+      - 'phase1/pom.xml'
+      - 'phase1/user-service/**'
+      - '.github/workflows/user-service-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Test
+        working-directory: phase1
+        run: ./mvnw -B -pl user-service -am test
+
+      - name: Package
+        working-directory: phase1
+        run: ./mvnw -B -pl user-service -am package -DskipTests
+
+      - name: Build image (no push)
+        run: docker build -f phase1/user-service/Dockerfile -t user-service:ci phase1/

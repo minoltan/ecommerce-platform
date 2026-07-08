@@ -1,5 +1,15 @@
 # Deploying user-service to AWS (EKS)
 
+> **This guide's manual steps are now automated.** [`phase1/CICD.md`](CICD.md) +
+> [`phase1/infra/cdk/`](infra/cdk/README.md) replace `eksctl` with an AWS CDK app and
+> wire the whole deploy → smoke-test sequence into a GitHub Actions pipeline
+> (`git push` to `main`, or a manual workflow run) — see
+> [`ADR-0016`](../docs/adr/ADR-0016-cdk-and-cicd-for-eks-deployment.md) for why. **Start
+> there** for the recommended path. The rest of this document is kept as the manual
+> walkthrough — useful for understanding exactly what the pipeline is doing under the
+> hood, debugging a failed automated run step by step, or a one-off deploy without
+> touching CI at all.
+
 Step-by-step guide to run user-service on a real AWS cluster for a **deploy → smoke
 test → load test → tear down** session — not a permanent environment. Read the cost
 and teardown sections before you start; leaving this running is the expensive

@@ -1,0 +1,102 @@
+name: Teardown AWS (EKS)
+
+# Manual-only, by design (ADR-0016 §4) — auto-destroying real infra on some
+# misfired trigger is a worse failure mode than a human occasionally
+# forgetting to click a button. Mirrors phase1/DEPLOYING_AWS.md's manual
+# teardown order: release the NLB before deleting the cluster, or it (and its
+# security group) is orphaned and keeps billing with nothing left to manage
+# it from kubectl.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to confirm — this deletes the real EKS cluster and all its infra.'
+        required: true
+
+concurrency:
+  group: aws-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  CLUSTER_STACK_NAME: EcommerceEksStack
+  APP_NAMESPACE: ecommerce
+  INFRA_NAMESPACE: ecommerce-infra
+
+jobs:
+  teardown:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "destroy" ]; then
+            echo "::error::confirm input must be exactly 'destroy' — got '${{ inputs.confirm }}'"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        id: kubeconfig
+        run: |
+          exists=$(aws cloudformation describe-stacks --stack-name "$CLUSTER_STACK_NAME" \
+            --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "MISSING")
+          echo "cluster-stack-exists=$([ "$exists" != "MISSING" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          if [ "$exists" != "MISSING" ]; then
+            CLUSTER_NAME=$(aws cloudformation describe-stacks --stack-name "$CLUSTER_STACK_NAME" \
+              --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)
+            aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+          fi
+
+      - name: Release the NLB (delete user-service + LoadBalancer Service)
+        if: steps.kubeconfig.outputs.cluster-stack-exists == 'true'
+        run: kubectl delete -k phase1/user-service/k8s/overlays/aws --ignore-not-found=true
+
+      - name: Confirm NLB is gone before touching the cluster
+        if: steps.kubeconfig.outputs.cluster-stack-exists == 'true'
+        run: |
+          for i in $(seq 1 18); do
+            remaining=$(aws elbv2 describe-load-balancers --region "$AWS_REGION" \
+              --query "LoadBalancers[?contains(LoadBalancerName, 'k8s-ecommerce')]" --output text)
+            [ -z "$remaining" ] && break
+            sleep 10
+          done
+          if [ -n "$remaining" ]; then
+            echo "::warning::NLB still present after ~3 minutes — check the AWS console before continuing. Proceeding anyway since cluster deletion is next."
+          fi
+
+      - name: Delete shared infra (MySQL, Redis, Kafka)
+        if: steps.kubeconfig.outputs.cluster-stack-exists == 'true'
+        run: kubectl delete -k phase1/k8s/infra --ignore-not-found=true
+
+      - name: cdk destroy
+        working-directory: phase1/infra/cdk
+        run: |
+          npm ci
+          npx cdk destroy EcommerceNetworkStack EcommerceEcrStack EcommerceEksStack --force
+
+      - name: Post-teardown checklist
+        run: |
+          echo "## Post-teardown checklist" >> "$GITHUB_STEP_SUMMARY"
+          vols=$(aws ec2 describe-volumes --region "$AWS_REGION" \
+            --filters Name=status,Values=available --query 'Volumes[].VolumeId' --output text)
+          lbs=$(aws elbv2 describe-load-balancers --region "$AWS_REGION" --query 'LoadBalancers[].LoadBalancerArn' --output text)
+          eips=$(aws ec2 describe-addresses --region "$AWS_REGION" --query 'Addresses[].AllocationId' --output text)
+          {
+            echo "- Orphaned EBS volumes: ${vols:-none}"
+            echo "- Remaining load balancers: ${lbs:-none}"
+            echo "- Unattached Elastic IPs: ${eips:-none}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$vols" ] || [ -n "$lbs" ] || [ -n "$eips" ]; then
+            echo "::warning::Teardown finished but leftover resources were found above — check the AWS console."
+          fi

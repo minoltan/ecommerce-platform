@@ -1,0 +1,47 @@
+name: CDK CI
+
+# Validates the CDK app compiles and synthesizes on every branch/PR that
+# touches it. Needs AWS credentials (read-only) because the EKS/VPC L2
+# constructs perform context lookups (e.g. availability zones) — this does
+# not create or modify any AWS resources. See phase1/CICD.md.
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'phase1/infra/cdk/**'
+      - '.github/workflows/aws-cdk-ci.yml'
+  pull_request:
+    paths:
+      - 'phase1/infra/cdk/**'
+      - '.github/workflows/aws-cdk-ci.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  synth:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: phase1/infra/cdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: phase1/infra/cdk/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+
+      - run: npx cdk synth --all
